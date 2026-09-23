@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IoAlbums, IoDesktop, IoDocument, IoHome, IoPeople, IoSettings, IoTicket, IoTime } from "react-icons/io5";
 import { useUpdater } from "@/features/updater/components/UpdateProvider";
+import { useAuth } from "@/lib/contexts/AuthContext";
+import { ORDER_HISTORY_READ_PERMISSION } from "@/lib/auth/permissions";
 
 interface SidebarProps {
     onLogout: () => void;
@@ -51,6 +53,7 @@ const NAV_ITEMS = [
 export default function Sidebar({ onLogout }: SidebarProps) {
     const pathname = usePathname();
     const updater = useUpdater();
+    const { effectiveWarehouseId, hasPermission } = useAuth();
     const hasAvailableUpdate = updater.availableVersion !== null;
     const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
     const logoutButtonRef = useRef<HTMLButtonElement>(null);
@@ -116,7 +119,10 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                 </div>
 
                 <nav className="flex flex-col items-center gap-2 w-full" aria-label="Điều hướng chính">
-                    {NAV_ITEMS.map((item) => {
+                    {NAV_ITEMS.filter((item) =>
+                        item.href !== "/orders" ||
+                        hasPermission(ORDER_HISTORY_READ_PERMISSION, effectiveWarehouseId || undefined)
+                    ).map((item) => {
                         const isActive = item.href === "/"
                             ? pathname === "/"
                             : item.href === "/members"

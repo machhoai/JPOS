@@ -5,6 +5,8 @@
 use serde::Serialize;
 mod card_reader;
 mod printer;
+#[cfg(windows)]
+mod repair;
 mod secure_credential;
 #[cfg(windows)]
 use std::{sync::mpsc, time::Duration};
@@ -471,6 +473,8 @@ pub fn run() {
             print_receipt_silent,
             card_reader::read_member_card,
             card_reader::cancel_member_card_read,
+            #[cfg(windows)]
+            repair::repair_app,
             secure_credential::get_or_create_pos_installation_id,
             secure_credential::save_pos_device_credential,
             secure_credential::load_pos_device_credential,

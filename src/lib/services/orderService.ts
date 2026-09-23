@@ -150,7 +150,8 @@ export interface OrderHistoryResult {
 
 export interface OrderHistoryQuery {
   warehouseId: string;
-  limit?: number;
+  startAt: string;
+  endAt: string;
 }
 
 export type CloseoutAccountScope = "CURRENT_USER" | "ALL_USERS";
@@ -165,17 +166,16 @@ export interface CloseoutOrderQuery {
 export async function fetchOrderHistory(
   query: OrderHistoryQuery,
 ): Promise<OrderHistoryResult> {
-  const requestedLimit = query.limit ?? 500;
   const callable = httpsCallable<
     {
       action: "getOrders";
-      payload: { warehouseId: string; limit: number };
+      payload: OrderHistoryQuery;
     },
     OrderHistoryResult
   >(functions, "getPosAuthSession");
   const result = await callable(await withDeviceAuth({
     action: "getOrders" as const,
-    payload: { warehouseId: query.warehouseId, limit: requestedLimit },
+    payload: query,
   }));
   return result.data;
 }
@@ -228,6 +228,13 @@ export async function getOrdersByStatus(
   status: OrderStatus,
   warehouseId: string,
 ): Promise<PosOrder[]> {
-  const result = await fetchOrderHistory({ warehouseId });
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const result = await fetchOrderHistory({
+    warehouseId,
+    startAt: start.toISOString(),
+    endAt: end.toISOString(),
+  });
   return result.orders.filter((order) => order.status === status);
 }

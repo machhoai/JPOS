@@ -22,6 +22,12 @@ import {
 import { retryOrderSync } from "@/lib/services/orderService";
 import { showError, showPromise } from "@/lib/utils/toast";
 import { useLuckyDrawSettingsSync } from "@/features/lucky-draw/hooks/useLuckyDrawSettingsSync";
+import { ORDER_HISTORY_READ_PERMISSION } from "@/lib/auth/permissions";
+import {
+    formatOrderHistoryDate,
+    getVietnamDateInputValue,
+    getOrderHistoryDayRange,
+} from "@/lib/utils/orderHistoryDate";
 
 const EMPTY_ORDERS: PosOrder[] = [];
 
@@ -33,10 +39,12 @@ export default function OrderHistoryPage() {
         effectiveWarehouseId,
         effectiveWarehouseName,
         isLoading: authLoading,
+        hasPermission,
         logout,
     } = useAuth();
     useLuckyDrawSettingsSync(effectiveWarehouseId);
     const [filters, setFilters] = useState<OrderFilterState>(DEFAULT_FILTERS);
+    const [selectedDate, setSelectedDate] = useState(() => getVietnamDateInputValue());
     const [selectedOrder, setSelectedOrder] = useState<PosOrder | null>(null);
     const [isRetrying, setIsRetrying] = useState(false);
 
@@ -47,6 +55,15 @@ export default function OrderHistoryPage() {
     const isLoadingOrders = useOrderHistoryStore((state) => state.isLoading);
     const orderError = useOrderHistoryStore((state) => state.error);
     const fetchOrders = useOrderHistoryStore((state) => state.fetchOrders);
+    const canReadOrderHistory = hasPermission(
+        ORDER_HISTORY_READ_PERMISSION,
+        effectiveWarehouseId || undefined,
+    );
+    const historyQuery = useMemo(() => {
+        if (!effectiveWarehouseId) return null;
+        const range = getOrderHistoryDayRange(selectedDate);
+        return { warehouseId: effectiveWarehouseId, ...range };
+    }, [effectiveWarehouseId, selectedDate]);
 
     // Auth guard
     useEffect(() => {
@@ -56,14 +73,14 @@ export default function OrderHistoryPage() {
     }, [authLoading, user, userDoc, router]);
 
     useEffect(() => {
-        if (!user || !userDoc || !effectiveWarehouseId) return;
-        void fetchOrders(effectiveWarehouseId).catch(() => {
+        if (!user || !userDoc || !canReadOrderHistory || !historyQuery) return;
+        void fetchOrders(historyQuery).catch(() => {
             showError(
                 "Không thể tải lịch sử đơn",
                 "Vui lòng kiểm tra kết nối và thử lại.",
             );
         });
-    }, [user, userDoc, effectiveWarehouseId, fetchOrders]);
+    }, [user, userDoc, canReadOrderHistory, historyQuery, fetchOrders]);
 
     const employeeOptions = useMemo(() => {
         const employees = new Map<string, string>();
@@ -110,8 +127,8 @@ export default function OrderHistoryPage() {
                 successDescription: "Hệ thống sẽ tiếp tục thanh toán đơn ở chế độ nền.",
                 errorDescription: "Vui lòng kiểm tra cấu hình thanh toán và thử lại.",
             });
-            if (effectiveWarehouseId) {
-                await fetchOrders(effectiveWarehouseId);
+            if (historyQuery) {
+                await fetchOrders(historyQuery);
             }
             if (selectedOrder && selectedOrder.localOrderId === targetOrder.localOrderId) {
                 setSelectedOrder(null);
@@ -121,7 +138,7 @@ export default function OrderHistoryPage() {
         } finally {
             setIsRetrying(false);
         }
-    }, [selectedOrder, fetchOrders, effectiveWarehouseId]);
+    }, [selectedOrder, fetchOrders, historyQuery]);
 
     // Stats calculation
     const totalRevenue = useMemo(
@@ -158,6 +175,36 @@ export default function OrderHistoryPage() {
         );
     }
 
+    if (user && userDoc && !canReadOrderHistory) {
+        return (
+            <div className="flex h-screen bg-[var(--color-background)]">
+                <Sidebar onLogout={logout} />
+                <main className="flex flex-1 items-center justify-center p-6">
+                    <div className="w-full max-w-md rounded-3xl border border-amber-200 bg-white p-7 text-center shadow-sm">
+                        <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-700" aria-hidden="true">
+                            <svg className="size-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 0h10.5A2.25 2.25 0 0 1 19.5 12.75v6A2.25 2.25 0 0 1 17.25 21H6.75A2.25 2.25 0 0 1 4.5 18.75v-6a2.25 2.25 0 0 1 2.25-2.25Z" />
+                            </svg>
+                        </div>
+                        <h1 className="mt-4 text-xl font-extrabold text-[var(--color-text-primary)]">
+                            Chưa được cấp quyền xem lịch sử đơn
+                        </h1>
+                        <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
+                            Tài khoản cần quyền <code>{ORDER_HISTORY_READ_PERMISSION}</code> tại cửa hàng này. Vui lòng liên hệ quản trị viên POS.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => router.replace("/")}
+                            className="mt-6 min-h-11 rounded-xl bg-[var(--color-accent)] px-5 text-sm font-bold text-white"
+                        >
+                            Về trang bán hàng
+                        </button>
+                    </div>
+                </main>
+            </div>
+        );
+    }
+
     return (
         <div className="flex h-screen bg-[var(--color-background)]">
             <Sidebar onLogout={logout} />
@@ -173,14 +220,14 @@ export default function OrderHistoryPage() {
                                 </h1>
                             </div>
                             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                                Theo dõi và tra cứu đơn hàng POS của ngày hôm nay
+                                Theo dõi và tra cứu đơn hàng POS ngày {formatOrderHistoryDate(selectedDate)}
                             </p>
                         </div>
 
                         <button
                             type="button"
-                            onClick={() => effectiveWarehouseId && void fetchOrders(effectiveWarehouseId)}
-                            disabled={isLoadingOrders}
+                            onClick={() => historyQuery && void fetchOrders(historyQuery)}
+                            disabled={isLoadingOrders || !historyQuery}
                             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-alt)] hover:bg-[var(--color-surface-hover)] text-sm font-bold text-[var(--color-text-primary)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 shadow-sm"
                         >
                             <svg
@@ -264,9 +311,12 @@ export default function OrderHistoryPage() {
                         <div className="p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-sm">
                             <OrderFilters
                                 filters={effectiveFilters}
+                                selectedDate={selectedDate}
+                                maxDate={getVietnamDateInputValue()}
                                 warehouseName={effectiveWarehouseName || "Chưa chọn cửa hàng"}
                                 employees={employeeOptions}
                                 onChange={setFilters}
+                                onDateChange={setSelectedDate}
                             />
                         </div>
 

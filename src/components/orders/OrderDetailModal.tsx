@@ -205,6 +205,7 @@ export default function OrderDetailModal({
                     {luckyDrawTicketCount > 0 && (
                         <LuckyDrawPrintButton
                             order={order}
+                            label="In lại phiếu bốc thăm"
                             className="mt-2 flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border border-amber-500 bg-amber-50 px-4 text-sm font-bold text-amber-700 active:scale-[0.98] disabled:opacity-50"
                         />
                     )}

@@ -59,9 +59,9 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Hỗ trợ mã QR voucher từ ứng dụng AEON Mall có định dạng nhiều phần, ví dụ AMTP-Voucher;123456;513245.
-            - JPOS chỉ sử dụng mã voucher ở phần đầu trước dấu chấm phẩy để kiểm tra và đổi voucher.
-            - Đồng bộ quy tắc chuẩn hóa mã ở ứng dụng và Cloud Functions để tránh lỗi tra cứu hoặc hiển thị dữ liệu thừa.
+            - Xem lịch sử đơn hàng theo ngày tại cửa hàng được phân quyền.
+            - In lại phiếu bốc thăm của đơn hàng theo số phiếu đã lưu khi bán.
+            - Sửa chữa và cài lại JPOS từ bản phát hành có chữ ký trong phần cài đặt hệ thống.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: true

@@ -8,23 +8,7 @@ export function filterAndSortOrders(
   filters: OrderFilterState,
   warehouseId: string,
 ): PosOrder[] {
-  const now = new Date();
-  const startOfToday = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  ).getTime();
-  const startOfTomorrow = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + 1,
-  ).getTime();
-  let result = orders.filter((order) => {
-    const createdAt = new Date(order.createdAt).getTime();
-    return order.warehouseId === warehouseId &&
-      createdAt >= startOfToday &&
-      createdAt < startOfTomorrow;
-  });
+  let result = orders.filter((order) => order.warehouseId === warehouseId);
 
   if (filters.statusFilter !== "all") {
     result = result.filter(

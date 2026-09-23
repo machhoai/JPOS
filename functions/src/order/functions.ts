@@ -36,6 +36,7 @@ import {
   applyOrderVouchers,
   voucherFieldsForOrder,
 } from "../services/voucherService";
+import { getCurrentVietnamDayRange } from "./orderHistoryRange";
 
 interface OrderItemInput {
   goodsId: string;
@@ -59,7 +60,8 @@ interface CheckoutInput extends OrderInput {
 
 interface OrderListInput {
   warehouseId?: string;
-  limit?: number;
+  startAt?: string;
+  endAt?: string;
 }
 
 interface CloseoutOrderListInput {
@@ -965,7 +967,8 @@ async function loadAccessibleOrders(
 async function loadAccessibleOrdersForWarehouse(
   userId: string,
   warehouseId: string,
-  requestedLimit: number,
+  startAt: string,
+  endAt: string,
 ): Promise<PosOrder[]> {
   const session = await getPosAuthSession(userId);
   const hasWarehouseAccess = session.warehouses.some(
@@ -977,50 +980,69 @@ async function loadAccessibleOrdersForWarehouse(
       "Bạn không có quyền xem đơn hàng tại cửa hàng này.",
     );
   }
-  const canReadWarehouseOrders = hasScopedPermission(
-    session.permissions,
-    "pos.orders.read",
-    warehouseId,
-  );
+  if (!hasScopedPermission(session.permissions, "pos.orders.read", warehouseId)) {
+    throw new HttpsError(
+      "permission-denied",
+      "Bạn không có quyền xem lịch sử đơn hàng tại cửa hàng này.",
+    );
+  }
   const snapshot = await db
     .collection(POS_COLLECTIONS.orders)
     .where("warehouseId", "==", warehouseId)
+    .where("createdAt", ">=", startAt)
+    .where("createdAt", "<", endAt)
     .orderBy("createdAt", "desc")
-    .limit(requestedLimit)
+    .limit(5_001)
     .get();
+
+  if (snapshot.size > 5_000) {
+    throw new HttpsError(
+      "resource-exhausted",
+      "Ngày đã chọn có quá nhiều đơn hàng. Vui lòng liên hệ quản trị hệ thống.",
+    );
+  }
 
   return snapshot.docs
     .map((document) => document.data() as PosOrder)
-    .filter(
-      (order) =>
-        order.warehouseId === warehouseId &&
-        (order.createdBy === userId || canReadWarehouseOrders),
-    );
+    .filter((order) => order.warehouseId === warehouseId);
 }
 
 export async function listPosOrdersForUser(
   userId: string,
   data: unknown,
 ) {
-  const rawLimit =
-    data && typeof data === "object"
-      ? (data as OrderListInput).limit
-      : undefined;
+  if (!data || typeof data !== "object") {
+    throw new HttpsError("invalid-argument", "Ngày xem lịch sử không hợp lệ.");
+  }
+  const input = data as OrderListInput;
   const warehouseId =
-    data && typeof data === "object" &&
-      typeof (data as OrderListInput).warehouseId === "string"
-      ? (data as OrderListInput).warehouseId?.trim()
+      typeof input.warehouseId === "string"
+      ? input.warehouseId.trim()
       : "";
   if (!warehouseId) {
     throw new HttpsError("invalid-argument", "Cửa hàng không hợp lệ.");
   }
-  const requestedLimit = Number.isInteger(rawLimit)
-    ? Math.min(Math.max(Number(rawLimit), 1), 500)
-    : 500;
+  const legacyRange = input.startAt === undefined && input.endAt === undefined
+    ? getCurrentVietnamDayRange()
+    : null;
+  const startTime = Date.parse(input.startAt ?? legacyRange?.startAt ?? "");
+  const endTime = Date.parse(input.endAt ?? legacyRange?.endAt ?? "");
+  if (
+    !Number.isFinite(startTime) ||
+    !Number.isFinite(endTime) ||
+    startTime >= endTime ||
+    endTime - startTime > 26 * 60 * 60 * 1000
+  ) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Chỉ có thể xem lịch sử trong một ngày hợp lệ.",
+    );
+  }
   const orders = await loadAccessibleOrdersForWarehouse(
     userId,
     warehouseId,
-    requestedLimit,
+    new Date(startTime).toISOString(),
+    new Date(endTime).toISOString(),
   );
 
   return {

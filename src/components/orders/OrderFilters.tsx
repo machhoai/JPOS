@@ -1,7 +1,7 @@
 "use client";
 
 // =============================================================================
-// OrderFilters — Bộ lọc đơn hàng trong ngày hôm nay
+// OrderFilters — Bộ lọc đơn hàng trong ngày được chọn
 // =============================================================================
 
 export interface OrderFilterState {
@@ -19,9 +19,12 @@ export interface OrderEmployeeOption {
 
 interface OrderFiltersProps {
     filters: OrderFilterState;
+    selectedDate: string;
+    maxDate: string;
     warehouseName: string;
     employees: OrderEmployeeOption[];
     onChange: (filters: OrderFilterState) => void;
+    onDateChange: (selectedDate: string) => void;
 }
 
 export const DEFAULT_FILTERS: OrderFilterState = {
@@ -51,9 +54,12 @@ const PAYMENT_METHODS = [
 
 const OrderFilters: React.FC<OrderFiltersProps> = ({
     filters,
+    selectedDate,
+    maxDate,
     warehouseName,
     employees,
     onChange,
+    onDateChange,
 }) => {
     const update = (partial: Partial<OrderFilterState>) => {
         onChange({ ...filters, ...partial });
@@ -62,7 +68,23 @@ const OrderFilters: React.FC<OrderFiltersProps> = ({
     return (
         <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 lg:w-auto">
+                <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-4">
+                    <label className="flex items-center gap-2">
+                        <span className="whitespace-nowrap text-xs font-semibold text-[var(--color-text-muted)]">
+                            Ngày:
+                        </span>
+                        <input
+                            type="date"
+                            value={selectedDate}
+                            max={maxDate}
+                            onChange={(event) => {
+                                if (event.target.value) onDateChange(event.target.value);
+                            }}
+                            required
+                            className="min-h-10 min-w-0 flex-1 cursor-pointer rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-semibold text-[var(--color-text-primary)] transition-colors focus:border-[var(--color-accent)] md:text-sm"
+                            aria-label="Ngày xem lịch sử đơn hàng"
+                        />
+                    </label>
                     <label className="flex items-center gap-2">
                         <span className="whitespace-nowrap text-xs font-semibold text-[var(--color-text-muted)]">
                             Trạng thái:
@@ -119,7 +141,7 @@ const OrderFilters: React.FC<OrderFiltersProps> = ({
                     <svg className="size-3.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15l-.75 4.5a3 3 0 0 1-5.25 1.5 3 3 0 0 1-5.25 0A3 3 0 0 1 3 7.5L4.5 3Zm.75 7.5V21m13.5-10.5V21M9 21v-6h6v6" />
                     </svg>
-                    <span className="truncate">Cửa hàng: {warehouseName} · Hôm nay</span>
+                    <span className="truncate">Cửa hàng: {warehouseName}</span>
                 </span>
             </div>
 
@@ -140,7 +162,7 @@ const OrderFilters: React.FC<OrderFiltersProps> = ({
                         value={filters.searchQuery}
                         onChange={(event) => update({ searchQuery: event.target.value })}
                         placeholder="Tìm theo mã đơn, sản phẩm, tên, SĐT hoặc mã thành viên..."
-                        aria-label="Tìm đơn hàng hôm nay"
+                        aria-label="Tìm đơn hàng trong ngày đã chọn"
                         className="min-h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] py-2 pl-10 pr-3 text-xs text-[var(--color-text-primary)] transition-colors placeholder:text-[var(--color-text-muted)] focus:border-[var(--color-accent)] md:text-sm"
                     />
                 </div>

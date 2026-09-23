@@ -1,37 +1,96 @@
 "use client";
 
+import { isTauri } from "@tauri-apps/api/core";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   CheckCircle2,
   Download,
   RefreshCw,
+  Wrench,
   ShieldCheck,
 } from "lucide-react";
-import { useCallback, useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Sidebar from "@/components/layout/Sidebar";
 import SettingsTabs from "@/components/settings/SettingsTabs";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { useUpdater } from "@/features/updater/components/UpdateProvider";
+import { useCartStore } from "@/lib/stores/useCartStore";
+
+interface RepairProgress {
+  stage: "checking" | "downloading" | "installing";
+  downloadedBytes: number;
+  totalBytes: number | null;
+}
+
+interface RepairState extends RepairProgress {
+  error: string | null;
+}
+
+const INITIAL_REPAIR_STATE: RepairState = {
+  stage: "checking",
+  downloadedBytes: 0,
+  totalBytes: null,
+  error: null,
+};
+
+const getRepairError = (error: unknown): string =>
+  error instanceof Error ? error.message : typeof error === "string"
+    ? error : "Không thể sửa chữa JPOS. Vui lòng thử lại.";
 
 const SystemSettingsPage: React.FC = () => {
   const router = useRouter();
   const { user, userDoc, isLoading: authLoading, logout } = useAuth();
   const updater = useUpdater();
+  const [repairState, setRepairState] = useState<RepairState | null>(null);
+  const repairInProgress = useRef(false);
+  const isRepairing = repairState !== null && repairState.error === null;
+  const isUpdaterBusy = updater.status === "checking" || updater.status === "downloading" || updater.status === "installing";
 
   useEffect(() => {
     if (!authLoading && (!user || !userDoc)) router.replace("/login");
   }, [authLoading, router, user, userDoc]);
 
   const handleCheck = useCallback(() => {
+    if (repairInProgress.current) return;
     void updater.checkForUpdates(false);
   }, [updater]);
 
   const handleInstall = useCallback(() => {
+    if (repairInProgress.current) return;
     void updater.installUpdate();
   }, [updater]);
 
   const isBusy = updater.status === "downloading" || updater.status === "installing";
+
+  const handleRepair = useCallback(async (): Promise<void> => {
+    if (repairInProgress.current || !isTauri() || isUpdaterBusy) return;
+
+    const cart = useCartStore.getState();
+    if (cart.isCheckingOut || cart.isPaymentLocked || cart.checkoutCheckpoint === "PAYMENT_INITIATED") {
+      setRepairState({ ...INITIAL_REPAIR_STATE, error: "Hãy hoàn tất hoặc hủy giao dịch đang xử lý trước khi sửa chữa JPOS." });
+      return;
+    }
+
+    repairInProgress.current = true;
+    setRepairState(INITIAL_REPAIR_STATE);
+    try {
+      const { Channel, invoke } = await import("@tauri-apps/api/core");
+      const onEvent = new Channel<RepairProgress>();
+      onEvent.onmessage = (progress) => {
+        setRepairState({ ...progress, error: null });
+      };
+      await invoke<void>("repair_app", { onEvent });
+    } catch (error: unknown) {
+      setRepairState({ ...INITIAL_REPAIR_STATE, error: getRepairError(error) });
+    } finally {
+      repairInProgress.current = false;
+    }
+  }, [isUpdaterBusy]);
+
+  const repairProgress = repairState?.stage === "downloading" && repairState.totalBytes
+    ? Math.min(100, Math.round((repairState.downloadedBytes / repairState.totalBytes) * 100))
+    : null;
 
   return (
     <div className="flex h-screen bg-[var(--color-background)]">
@@ -52,7 +111,7 @@ const SystemSettingsPage: React.FC = () => {
           <button
             type="button"
             onClick={handleCheck}
-            disabled={updater.status === "checking" || isBusy}
+            disabled={isUpdaterBusy || isRepairing}
             className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 text-xs font-bold text-[var(--color-text-secondary)] hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw className={`size-4 ${updater.status === "checking" ? "animate-spin" : ""}`} />
@@ -63,7 +122,8 @@ const SystemSettingsPage: React.FC = () => {
         <SettingsTabs />
 
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <section className="mx-auto max-w-3xl overflow-hidden rounded-3xl border border-[var(--color-border)] bg-white shadow-sm">
+          <div className="mx-auto max-w-3xl space-y-5">
+          <section className="overflow-hidden rounded-3xl border border-[var(--color-border)] bg-white shadow-sm">
             <div className="border-b border-[var(--color-border)] p-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -110,7 +170,7 @@ const SystemSettingsPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleInstall}
-                      disabled={isBusy}
+                      disabled={isBusy || isRepairing}
                       className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-accent)] px-5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
                     >
                       {isBusy ? <RefreshCw className="size-4 animate-spin" /> : <Download className="size-4" />}
@@ -157,6 +217,42 @@ const SystemSettingsPage: React.FC = () => {
               </div>
             </div>
           </section>
+          <section className="rounded-3xl border border-[var(--color-border)] bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex max-w-xl items-start gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-[var(--color-accent)]">
+                  <Wrench className="size-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-[var(--color-text-primary)]">Sửa chữa JPOS</h2>
+                  <p className="mt-1 text-sm leading-6 text-[var(--color-text-muted)]">
+                    Tải lại bộ cài đã xác thực và cài lại JPOS, kể cả khi bạn đang dùng phiên bản mới nhất. Ứng dụng sẽ đóng để cài đặt rồi mở lại.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleRepair()}
+                disabled={!isTauri() || isUpdaterBusy || isRepairing}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--color-accent)] px-5 text-sm font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isRepairing ? <RefreshCw className="size-4 animate-spin" /> : <Wrench className="size-4" />}
+                {isRepairing ? repairState?.stage === "checking"
+                  ? "Đang kiểm tra..." : repairState?.stage === "installing"
+                    ? "Đang cài đặt..." : `Đang tải${repairProgress === null ? "..." : ` ${repairProgress}%`}`
+                  : "Sửa chữa / cài lại"}
+              </button>
+            </div>
+            <p className="mt-4 text-xs leading-5 text-[var(--color-text-muted)]">
+              Cần kết nối Internet. Nếu 360 Total Security đã xóa tệp đọc thẻ, hãy thêm tệp đó vào danh sách tin cậy của 360 trước khi sửa chữa để tránh bị xóa lại.
+            </p>
+            {repairState?.error && (
+              <div className="mt-4" role="alert">
+                <MessageBox icon={AlertCircle} tone="error">{repairState.error}</MessageBox>
+              </div>
+            )}
+          </section>
+          </div>
         </div>
       </main>
     </div>
