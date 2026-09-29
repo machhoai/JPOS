@@ -1,149 +1,68 @@
-# POS System — Local-First, Event-Driven
+# JPOS
 
-A desktop Point of Sale application built with **Next.js**, **Tauri**, and **Firebase**, designed for zero-latency cashier operations with background sync to a remote API.
+JPOS là ứng dụng bán hàng tại quầy chạy trên Windows bằng Tauri. Giao diện dùng Next.js và được xuất thành tệp tĩnh để đóng gói cùng ứng dụng; các tác vụ máy chủ nằm trong Firebase Cloud Functions. Ứng dụng kết nối Firebase, JPULSE và các dịch vụ tích hợp theo cấu hình của từng môi trường.
 
-## Architecture
+## Cấu trúc repository
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Tauri Desktop App                       │
-│                                                              │
-│  ┌──────────────────┐    Firestore     ┌──────────────────┐  │
-│  │   Main Window    │  ◄──onSnapshot──►│  Customer Display │  │
-│  │   (Cashier)      │                  │  (/display)       │  │
-│  │                  │                  │                    │  │
-│  │  Zustand Store   │                  │  Real-time mirror  │  │
-│  │  ───► Firestore  │                  │  of cart items     │  │
-│  └──────────────────┘                  └──────────────────┘  │
-│           │                                                  │
-│           │ writes LOCAL_PAID                                 │
-└───────────┼──────────────────────────────────────────────────┘
-            │
-            ▼
-┌──────────────────────────────────────────────────────────────┐
-│              Firebase Cloud Functions                          │
-│                                                                │
-│  onDocumentUpdated("pos_orders/{id}")                         │
-│    ├── status → SYNCING                                       │
-│    ├── MD5 sign → order_create (HK API)                       │
-│    ├── MD5 sign → order_pay   (HK API)                        │
-│    └── status → SYNC_SUCCESS / SYNC_FAILED                    │
-└──────────────────────────────────────────────────────────────┘
-```
+| Đường dẫn | Nội dung |
+| --- | --- |
+| `src/` | Giao diện Next.js, trạng thái ứng dụng và luồng bán hàng |
+| `src-tauri/` | Ứng dụng desktop Rust/Tauri, in ấn, thiết bị và updater |
+| `functions/` | Firebase Cloud Functions, có dependency và lockfile riêng |
+| `test/`, `functions/test/` | Kiểm thử frontend và Cloud Functions |
+| `docs/` | Hướng dẫn sử dụng, tích hợp voucher, updater và thiết bị |
+| `.github/workflows/release-tauri.yml` | Build/ký installer Windows và phát hành bản cập nhật ứng dụng |
 
-## Tech Stack
+Xem [hướng dẫn sử dụng](docs/Huong_dan_su_dung_JPOS.docx), [hợp đồng voucher](docs/voucher-api.md), [tích hợp đầu đọc thẻ](docs/card-reader-d3.md) và [quy trình cập nhật](docs/UPDATER.md) theo phần việc tương ứng.
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS v4 |
-| Desktop | Tauri v2 (Rust + WebView) |
-| Database | Firebase Firestore |
-| State | Zustand |
-| Sync Worker | Firebase Cloud Functions (v2) |
-| Signature | MD5 (Node.js `crypto`) |
+## Yêu cầu phát triển
 
-## Project Structure
+- Node.js **22** và pnpm **9.15.4** cho ứng dụng; Cloud Functions cũng khai báo Node.js 22.
+- Để chạy bản desktop trên Windows: Rust toolchain, công cụ build C++ cho Windows và các tài nguyên thiết bị được kiểm tra bởi script trong `scripts/`.
+- Firebase CLI nếu chạy emulator hoặc triển khai Cloud Functions.
+- Quyền truy cập môi trường **test** Firebase/JPULSE và tài khoản thử nghiệm do người quản trị cấp riêng. Repository không bao gồm dữ liệu hoặc bí mật production.
 
-```
-├── src/                          # Next.js frontend (static export)
-│   ├── app/
-│   │   ├── page.tsx              # Cashier POS terminal
-│   │   └── display/page.tsx      # Customer-facing display
-│   ├── components/
-│   │   ├── pos/                  # Cart, Checkout components
-│   │   └── display/              # CustomerView component
-│   └── lib/
-│       ├── firebase/client.ts    # Firebase Client SDK
-│       ├── services/orderService.ts  # Firestore CRUD
-│       ├── stores/useCartStore.ts    # Zustand cart state
-│       └── types/                # TypeScript interfaces
-│
-├── functions/                    # Firebase Cloud Functions
-│   └── src/
-│       ├── index.ts              # Firestore trigger (sync worker)
-│       ├── config/firebase.ts    # Admin SDK init
-│       ├── services/hkApiService.ts  # HK API caller
-│       ├── utils/hk-signature.ts     # MD5 signature utility
-│       └── types/order.ts        # Shared types (duplicated)
-│
-├── src-tauri/                    # Tauri v2 backend (Rust)
-│   ├── src/lib.rs                # Commands (open_customer_display)
-│   └── tauri.conf.json           # Dual-window config
-│
-├── firebase.json                 # Firebase project config
-├── firestore.rules               # Firestore security rules (DEV)
-└── .env.example                  # Environment template
-```
+## Cài đặt và chạy cục bộ
 
-## Getting Started
-
-### Prerequisites
-- Node.js 18+
-- pnpm (`npm install -g pnpm`)
-- Rust toolchain ([rustup.rs](https://rustup.rs))
-- Tauri CLI (`pnpm add -D @tauri-apps/cli`)
-- Firebase CLI (`npm install -g firebase-tools`)
-
-### Setup
-
-1. **Clone and install dependencies:**
-   ```bash
-   pnpm install
-   cd functions && npm install && cd ..
-   ```
-
-2. **Configure environment:**
-   ```bash
-   cp .env.example.local .env.local
-   # Use the same Firebase client values as bduck-system/.env.local
-   
-   cp functions/.env.example functions/.env.local
-   # Fill in HK API credentials (server-side only)
-   ```
-
-3. **Run in development mode:**
-   ```bash
-   # Next.js only (browser)
-   pnpm dev
-   
-   # Tauri desktop app (includes Next.js dev server)
-   pnpm tauri:dev
-   ```
-
-4. **Run Firebase emulators (optional):**
-   ```bash
-   firebase emulators:start
-   ```
-
-### Build for Production
+Từ thư mục gốc:
 
 ```bash
-# Build static export
+corepack enable
+corepack prepare pnpm@9.15.4 --activate
+pnpm install --frozen-lockfile
+npm --prefix functions ci
+```
+
+Sao chép `.env.example.local` thành `.env.local` ở gốc và `functions/.env.example` thành `functions/.env.local`, sau đó điền **giá trị test** được cấp. File ở gốc chỉ chứa cấu hình frontend `NEXT_PUBLIC_*`; khóa HK API, JoyWorld và PayOS thuộc cấu hình máy chủ của Functions. Các file `.env.local` và `functions/.env` được Git bỏ qua. Không sao chép bí mật production vào máy phát triển hoặc commit chúng.
+
+```bash
+pnpm dev        # Giao diện trong trình duyệt tại http://localhost:3000
+pnpm tauri:dev  # Ứng dụng desktop; tự chạy Next.js dev server
+```
+
+Để thử Cloud Functions cục bộ, dùng Firebase Emulator theo `firebase.json` và cấu hình test phù hợp. Một số luồng cần quyền Firebase, máy in, đầu đọc thẻ hoặc dịch vụ ngoài nên không thể xác minh chỉ bằng giao diện trình duyệt.
+
+## Kiểm tra và build
+
+```bash
+pnpm test
+pnpm lint
 pnpm build
-
-# Build Tauri desktop binary
-pnpm tauri:build
-
-# Deploy Cloud Functions
-cd functions && npm run deploy
+npm --prefix functions run build
+npm --prefix functions test
 ```
 
-## Order Lifecycle
+`pnpm build` tạo static export trong `out/`. `pnpm tauri:build` tạo installer Windows và chạy bước chuẩn bị sidecar/driver theo `src-tauri/tauri.conf.json`; cần công cụ Windows và tài nguyên thiết bị thích hợp. Triển khai Cloud Functions bằng lệnh `npm --prefix functions run deploy` **chỉ khi đã thống nhất môi trường, quyền và kế hoạch triển khai**.
 
-```
-DRAFT → LOCAL_PAID → SYNCING → SYNC_SUCCESS
-                             → SYNC_FAILED (auto-retry)
-```
+## Phân biệt hai loại Release
 
-1. **DRAFT**: Cashier is building the cart
-2. **LOCAL_PAID**: Payment completed at terminal, saved to Firestore
-3. **SYNCING**: Cloud Function picked up the order, calling HK API
-4. **SYNC_SUCCESS**: HK API confirmed, `hkOrderNumber` stored
-5. **SYNC_FAILED**: HK API error, `retryCount` incremented
+- **Release ứng dụng:** tag dạng `jpos-v*` kích hoạt workflow [Release JPOS Desktop](.github/workflows/release-tauri.yml), ký installer, tạo `latest.json` và mirror installer sang Firebase Storage. Ứng dụng đang cài dùng URL `releases/latest/download/latest.json` để kiểm tra cập nhật. Chỉ tạo tag này theo [quy trình cập nhật](docs/UPDATER.md).
+- **Release bàn giao source:** tag dạng `handover-*` là snapshot mã nguồn và tài liệu, không chứa installer và không kích hoạt workflow desktop. Release loại này được đánh dấu **prerelease** để không thay thế Release ứng dụng mới nhất tại URL updater.
 
-## Security
+Không dùng tag `jpos-v*` để bàn giao source nếu không chủ ý phát hành một bản cài đặt mới cho cửa hàng.
 
-- HK API key (`HK_API_KEY`) is **never** exposed to the frontend
-- MD5 signature generation runs **exclusively** in Cloud Functions
-- Firebase Client SDK uses only public configuration
-- Firestore rules must be hardened before production deployment
+## Phạm vi bàn giao
+
+Git tag/Release xác định đúng phiên bản mã nguồn đã bàn giao. Người tiếp nhận cần được cấp riêng quyền Firebase/GCP, GitHub, registry, khóa ký Tauri, cấu hình tích hợp, dữ liệu test và quyền vận hành tương ứng. Release không bao gồm `.env.local`, private key, dữ liệu production hoặc thay đổi chưa commit trên máy phát triển.
+
+Khi nghiệm thu, đội tiếp nhận cần clone đúng tag, cài dependency, chạy các kiểm tra đã thống nhất, dựng bản desktop trên môi trường test và ghi lại lỗi/tồn đọng cùng đầu mối hỗ trợ. Quyền sở hữu và quyền sử dụng mã nguồn được xác định trong hợp đồng bàn giao giữa hai bên.
