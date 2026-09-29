@@ -23,7 +23,7 @@ jobs:
       NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
       NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
       NEXT_PUBLIC_SHOP_ID: "20692"
-      NEXT_PUBLIC_JPULSE_API_URL: https://api-erp.joyworldcityfuns.vn
+      NEXT_PUBLIC_JPULSE_API_URL: https://be-wms-107789134874.asia-southeast1.run.app
       NEXT_PUBLIC_INVOICE_REQUEST_BASE_URL: https://jpulse.joyworldcityfuns.vn/invoice-request
 
     steps:
@@ -59,9 +59,7 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Xem lịch sử đơn hàng theo ngày tại cửa hàng được phân quyền.
-            - In lại phiếu bốc thăm của đơn hàng theo số phiếu đã lưu khi bán.
-            - Sửa chữa và cài lại JPOS từ bản phát hành có chữ ký trong phần cài đặt hệ thống.
+            - Kết nối JPULSE backend qua địa chỉ Cloud Run trong thời gian domain tùy chỉnh gặp sự cố.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: true
