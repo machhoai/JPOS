@@ -4,6 +4,7 @@
 
 use serde::Serialize;
 mod card_reader;
+mod cash_drawer;
 mod printer;
 #[cfg(windows)]
 mod repair;
@@ -470,6 +471,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_customer_display,
             printer::list_printers,
+            cash_drawer::open_cash_drawer,
             print_receipt_silent,
             card_reader::read_member_card,
             card_reader::cancel_member_card_read,

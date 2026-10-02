@@ -59,7 +59,9 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Hiển thị nguyên nhân lỗi cụ thể khi đăng ký thành viên hoặc gắn thẻ, bao gồm lỗi số điện thoại đã được đăng ký, thay cho thông báo chung.
+            - Tự mở két một lần khi thanh toán tiền mặt thành công, dùng máy in đã chọn trong cài đặt.
+            - Thêm cấu hình chân kích, nút thử/mở thủ công theo quyền và lựa chọn lệnh ESC/POS hoặc TSPL cho 365B ở chế độ in tem.
+            - In lại bill, in vé và thanh toán chuyển khoản không tự mở két; lỗi thiết bị không ảnh hưởng đơn đã thanh toán.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: true

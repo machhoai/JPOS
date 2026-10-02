@@ -1,5 +1,7 @@
 "use client";
 
+import { openCashDrawerAfterPayment } from "@/features/printer/services/cashDrawerService";
+
 // =============================================================================
 // Main POS Dashboard — Cashier interface
 // =============================================================================
@@ -480,7 +482,9 @@ export default function CashierPage() {
     }
 
     const runCheckout = async () => {
+      const paidWith = useCartStore.getState().paymentMethod;
       const result = await checkout(shopId, effectiveWarehouseId);
+      void openCashDrawerAfterPayment(result.localOrderId, effectiveWarehouseId, paidWith);
       logCheckoutTelemetry("payment_detected", {
         localOrderId: result.localOrderId,
         orderKind: "STANDARD",

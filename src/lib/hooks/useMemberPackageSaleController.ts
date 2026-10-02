@@ -1,5 +1,7 @@
 "use client";
 
+import { openCashDrawerAfterPayment } from "@/features/printer/services/cashDrawerService";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePayOSCheckoutController } from "@/lib/hooks/usePayOSCheckoutController";
 import { lookupMember, toMemberServiceError } from "@/lib/services/memberService";
@@ -197,6 +199,9 @@ export function useMemberPackageSaleController({
         warehouseId,
         details: { paymentMethod: sourcePaymentMethod },
       });
+      if (warehouseId) {
+        void openCashDrawerAfterPayment(orderId, warehouseId, sourcePaymentMethod);
+      }
       await completeSuccessfulSale(orderId, result.remoteOrderNumber);
     } catch (error: unknown) {
       const serviceError = toMemberServiceError(error);
@@ -292,6 +297,7 @@ export function useMemberPackageSaleController({
         details: { paymentMethod: "CASH" },
       });
       setCheckoutOpen(false);
+      void openCashDrawerAfterPayment(localOrderId, warehouseId, "CASH");
       await completeSuccessfulSale(localOrderId, result.remoteOrderNumber);
     } catch (error: unknown) {
       const serviceError = toMemberServiceError(error);

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import Sidebar from "@/components/layout/Sidebar";
 import SettingsTabs from "@/components/settings/SettingsTabs";
+import CashDrawerSettings from "@/features/printer/components/CashDrawerSettings";
 import {
   MAX_PRINT_TOP_MARGIN_MM,
   MIN_PRINT_TOP_MARGIN_MM,
@@ -337,6 +338,7 @@ const PrinterSettingsPage: React.FC = () => {
                       Mẫu đặt một vạch đen tại đúng 0 mm. Khoảng từ mép cắt đến vạch đen là phần do driver hoặc cơ cấu máy in tạo ra.
                     </p>
                   </div>
+                  <CashDrawerSettings printers={printers} />
                 </section>
 
                 <aside className="space-y-4">
