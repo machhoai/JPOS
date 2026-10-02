@@ -51,7 +51,7 @@ interface PromiseToastOptions {
     success: string;
     error: string;
     successDescription?: string;
-    errorDescription?: string;
+    errorDescription?: string | ((error: unknown) => string);
     /** Callback retry khi gặp lỗi */
     onRetry?: () => void;
 }

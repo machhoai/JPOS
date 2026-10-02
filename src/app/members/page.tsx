@@ -615,7 +615,7 @@ export default function MembersPage() {
                     successDescription: registrationCard
                         ? "Joyworld đã xác nhận thẻ và POS đã lưu mã thẻ."
                         : "OpenAPI đã xác nhận và POS đã lưu hồ sơ.",
-                    errorDescription: "Xem trạng thái chi tiết trên màn hình và thử lại an toàn.",
+                    errorDescription: (error: unknown) => toMemberServiceError(error).message,
                     onRetry: retryRegistration,
                 }
             );
