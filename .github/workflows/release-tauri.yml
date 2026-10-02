@@ -59,7 +59,7 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Kết nối JPULSE backend qua địa chỉ Cloud Run trong thời gian domain tùy chỉnh gặp sự cố.
+            - Hiển thị nguyên nhân lỗi cụ thể khi đăng ký thành viên hoặc gắn thẻ, bao gồm lỗi số điện thoại đã được đăng ký, thay cho thông báo chung.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: true
