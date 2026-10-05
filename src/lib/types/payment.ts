@@ -45,6 +45,7 @@ export interface PayOSPaymentSession {
 }
 
 export interface PayOSPaymentResult {
+  paymentRuntime?: { realtimeEnabled: boolean; pollingIntervalMs: number };
   localOrderId: string;
   orderStatus: OrderStatus;
   totalAmount: number;

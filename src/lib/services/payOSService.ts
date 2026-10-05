@@ -55,8 +55,21 @@ export async function createPayOSPayment(
   return response.data;
 }
 
-export const fetchPayOSPaymentStatus = (localOrderId: string) =>
-  callOrderAction("status", localOrderId);
+const statusChecks = new Map<string, Promise<PayOSPaymentResult>>();
+
+export function fetchPayOSPaymentStatus(localOrderId: string): Promise<PayOSPaymentResult> {
+  const existing = statusChecks.get(localOrderId);
+  if (existing) return existing;
+  const result = callOrderAction("status", localOrderId).finally(() => {
+    if (statusChecks.get(localOrderId) === result) statusChecks.delete(localOrderId);
+  });
+  statusChecks.set(localOrderId, result);
+  return result;
+}
+
+export async function waitForPayOSStatusCheck(localOrderId: string): Promise<void> {
+  await statusChecks.get(localOrderId)?.catch(() => undefined);
+}
 
 export const handlePayOSPaymentTimeout = (localOrderId: string) =>
   callOrderAction("timeout", localOrderId);

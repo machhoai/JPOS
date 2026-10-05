@@ -1,7 +1,3 @@
-rules_version = '2';
-
-service cloud.firestore {
-  match /databases/{database}/documents {
     // BEGIN POS PAYMENT REALTIME
     // Merge this block into the live shared ruleset; never deploy the POS-only
     // firestore.rules file over bduck-system's rules.
@@ -36,53 +32,3 @@ service cloud.firestore {
       allow read, write: if false;
     }
     // END POS PAYMENT REALTIME
-
-    // POS orders and member profiles are backend-only. Authenticated clients
-    // use callable Cloud Functions; only the Admin SDK reads or writes data.
-    match /pos_orders/{orderId} {
-      allow read, write: if false;
-    }
-
-    match /pos_members/{memberId} {
-      allow read, write: if false;
-    }
-
-    // Payment settings are managed exclusively by authenticated callable
-    // Functions so account changes receive device-scoped RBAC checks.
-    match /pos_payment_settings/{deviceId} {
-      allow read, write: if false;
-    }
-
-    // Lucky-draw campaign settings are warehouse-scoped and are only read or
-    // changed through authenticated callable Functions with POS RBAC checks.
-    match /pos_lucky_draw_settings/{warehouseId} {
-      allow read, write: if false;
-    }
-
-    // JPULSE manages trusted devices and shared receipt configuration through
-    // authenticated backend APIs. JPOS never accesses these documents directly.
-    match /pos_devices/{deviceId} {
-      allow read, write: if false;
-    }
-    match /pos_product_sync_runs/{runId} {
-      allow read, write: if false;
-    }
-    match /pos_device_enrollments/{enrollmentId} {
-      allow read, write: if false;
-    }
-    match /pos_receipt_settings/{warehouseId} {
-      allow read, write: if false;
-    }
-    match /pos_ticket_settings/{warehouseId} {
-      allow read, write: if false;
-    }
-    // Voucher policy and redemption records are read and written only through
-    // authenticated backends so redemption and order updates stay atomic.
-    match /pos_voucher_campaign_settings/{settingId} {
-      allow read, write: if false;
-    }
-    match /pos_voucher_redemptions/{redemptionId} {
-      allow read, write: if false;
-    }
-  }
-}

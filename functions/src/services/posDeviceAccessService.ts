@@ -6,6 +6,7 @@ import { db } from "../config/firebase";
 export interface ActivePosDevice {
   id: string;
   warehouseId: string;
+  paymentLatencyOptimizationEnabled: boolean;
 }
 
 export async function assertActivePosDevice(data: unknown): Promise<ActivePosDevice> {
@@ -47,5 +48,9 @@ export async function assertActivePosDevice(data: unknown): Promise<ActivePosDev
       "Máy POS không có quyền truy cập hoặc đã bị khóa trên JPULSE.",
     );
   }
-  return { id: snapshot.id, warehouseId: device.warehouse_id };
+  return {
+    id: snapshot.id,
+    warehouseId: device.warehouse_id,
+    paymentLatencyOptimizationEnabled: device.payment_latency_optimization_enabled === true,
+  };
 }

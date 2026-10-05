@@ -103,6 +103,10 @@ export interface PayOSPaymentAttempt {
   updatedAt?: string;
   paidAt?: string;
   paidAmount?: number;
+  qrReadyAt?: string;
+  createRequestStartedAt?: string;
+  confirmationSource?: "WEBHOOK" | "API_CHECK";
+  webhookReceivedAt?: string;
   reference?: string;
   transactionDateTime?: string;
   error?: string;
@@ -163,6 +167,8 @@ export interface FixedTransferDetails {
 
 /** The POS order document in Firestore. */
 export interface PosOrder {
+  /** Opaque ID for the device-scoped payment status projection. */
+  paymentWatchId?: string;
   localOrderId: string;
   hkOrderNumber: string | null;
   /** Amount returned by order_create, retained for member-sale reconciliation. */

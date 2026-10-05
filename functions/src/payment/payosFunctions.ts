@@ -4,7 +4,9 @@ import {
   type PaymentLink,
   type PaymentLinkStatus,
 } from "@payos/node";
-import type { DocumentReference } from "firebase-admin/firestore";
+import type { DocumentReference, DocumentSnapshot } from "firebase-admin/firestore";
+import { writePaymentStatus } from "./paymentStatusProjection";
+import { withPayOSCheckLease } from "./payosCheckLease";
 import { HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "../config/firebase";
@@ -65,6 +67,8 @@ function hasScopedPermission(
 }
 
 interface VerifiedPayment {
+  confirmationSource?: "WEBHOOK" | "API_CHECK";
+  webhookReceivedAt?: string;
   code: string;
   orderCode: number;
   amount: number;
@@ -165,6 +169,7 @@ function buildPaymentResult(order: PosOrder) {
 async function getAuthorizedOrder(
   userId: string,
   localOrderId: string,
+  existingSnapshot?: DocumentSnapshot,
 ): Promise<{
   docRef: DocumentReference;
   order: PosOrder;
@@ -172,7 +177,7 @@ async function getAuthorizedOrder(
 }> {
   const [session, snapshot] = await Promise.all([
     getPosAuthSession(userId),
-    db.collection(POS_COLLECTIONS.orders).doc(localOrderId).get(),
+    existingSnapshot ?? db.collection(POS_COLLECTIONS.orders).doc(localOrderId).get(),
   ]);
   if (!snapshot.exists) {
     throw new HttpsError("not-found", "Không tìm thấy đơn hàng.");
@@ -327,6 +332,7 @@ async function reservePaymentAttempt(
       paymentDetails,
       updatedAt: nextOrder.updatedAt,
     });
+    writePaymentStatus(transaction, nextOrder);
     return { order: nextOrder, attempt };
   });
 }
@@ -334,14 +340,11 @@ async function reservePaymentAttempt(
 async function storeCreatedPaymentLink(
   docRef: DocumentReference,
   reservedAttempt: PayOSPaymentAttempt,
+  order: PosOrder,
 ) {
   const payos = getPayOS();
-  const snapshot = await docRef.get();
-  if (!snapshot.exists) {
-    throw new HttpsError("not-found", "Không tìm thấy đơn hàng.");
-  }
-  const order = snapshot.data() as PosOrder;
   const { returnUrl, cancelUrl } = buildPayOSRedirectUrls(order.localOrderId);
+  const createRequestStartedAt = new Date().toISOString();
 
   try {
     const paymentLink = await payos.paymentRequests.create({
@@ -360,7 +363,7 @@ async function storeCreatedPaymentLink(
       })),
     });
 
-    return db.runTransaction(async (transaction) => {
+    const storedOrder = await db.runTransaction(async (transaction) => {
       const freshSnapshot = await transaction.get(docRef);
       if (!freshSnapshot.exists) {
         throw new HttpsError("not-found", "Không tìm thấy đơn hàng.");
@@ -380,6 +383,9 @@ async function storeCreatedPaymentLink(
       ) {
         return freshOrder;
       }
+      // Cancellation may finish while the provider is still creating the QR.
+      // Never revive the locally cancelled attempt with the late create reply.
+      if (freshAttempt?.status !== "CREATING") return freshOrder;
       const now = new Date().toISOString();
       const createdAttempt: PayOSPaymentAttempt = {
         ...reservedAttempt,
@@ -401,6 +407,8 @@ async function storeCreatedPaymentLink(
           Date.now() + PAYOS_DISPLAY_WINDOW_MS,
         ).toISOString(),
         updatedAt: now,
+        qrReadyAt: now,
+        createRequestStartedAt,
       };
       const paymentDetails = {
         ...replaceAttempt(details, createdAttempt),
@@ -413,8 +421,22 @@ async function storeCreatedPaymentLink(
         updatedAt: now,
       };
       transaction.update(docRef, { paymentDetails, updatedAt: now });
+      writePaymentStatus(transaction, nextOrder);
       return nextOrder;
     });
+    const storedAttempt = getCurrentAttempt(storedOrder);
+    if (!isCompletedOrderStatus(storedOrder.status) && storedAttempt &&
+        storedAttempt.orderCode === reservedAttempt.orderCode &&
+        ["CANCELLED", "EXPIRED"].includes(storedAttempt.status)) {
+      try {
+        return await cancelAttemptSafely(docRef, reservedAttempt, "Phiên đã được hủy trong lúc tạo QR");
+      } catch (error: unknown) {
+        logger.warn("[PayOS] Không thể hủy QR tạo xong sau khi thu ngân đã hủy phiên", {
+          localOrderId: order.localOrderId, orderCode: reservedAttempt.orderCode, error,
+        });
+      }
+    }
+    return storedOrder;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     await markAttemptFailed(docRef, reservedAttempt.orderCode, errorMessage);
@@ -450,14 +472,16 @@ async function markAttemptFailed(
       updatedAt: now,
       error: errorMessage,
     };
-    transaction.update(docRef, {
-      paymentDetails: {
+    const paymentDetails = {
         ...replaceAttempt(details, failedAttempt),
         lastCheckedAt: now,
         lastError: errorMessage,
-      },
+    };
+    transaction.update(docRef, {
+      paymentDetails,
       updatedAt: now,
     });
+    writePaymentStatus(transaction, { ...order, paymentDetails, updatedAt: now });
   });
 }
 
@@ -483,6 +507,10 @@ async function updateAttemptStatus(
     ) {
       return order;
     }
+    if (attempt.status === status && !details.lastError &&
+        (remoteCancellationConfirmed === undefined || attempt.remoteCancellationConfirmed === remoteCancellationConfirmed)) {
+      return order;
+    }
     const now = new Date().toISOString();
     const nextAttempt: PayOSPaymentAttempt = {
       ...attempt,
@@ -506,6 +534,7 @@ async function updateAttemptStatus(
     }
     const nextOrder: PosOrder = { ...order, paymentDetails, updatedAt: now };
     transaction.update(docRef, { paymentDetails, updatedAt: now });
+    writePaymentStatus(transaction, nextOrder);
     return nextOrder;
   });
 }
@@ -574,6 +603,8 @@ export async function markPayOSPaymentPaid(
       status: "PAID",
       paidAt,
       paidAmount: payment.amount,
+      confirmationSource: payment.confirmationSource ?? "API_CHECK",
+      ...(payment.webhookReceivedAt ? { webhookReceivedAt: payment.webhookReceivedAt } : {}),
       updatedAt: paidAt,
       ...(payment.reference ? { reference: payment.reference } : {}),
       ...(payment.transactionDateTime
@@ -588,6 +619,7 @@ export async function markPayOSPaymentPaid(
     if (decision === "ALREADY_COMPLETED") {
       if (attempt.status !== "PAID") {
         transaction.update(docRef, { paymentDetails, updatedAt: paidAt });
+        writePaymentStatus(transaction, { ...order, paymentDetails, updatedAt: paidAt });
       }
       return "ALREADY_COMPLETED";
     }
@@ -600,6 +632,7 @@ export async function markPayOSPaymentPaid(
       paidAt,
       updatedAt: paidAt,
     });
+    writePaymentStatus(transaction, { ...order, status: "LOCAL_PAID", paymentDetails, paidAt, updatedAt: paidAt });
     return "PAID";
   });
 }
@@ -608,36 +641,39 @@ async function syncPayOSOrder(
   docRef: DocumentReference,
   order: PosOrder,
   requestOptions?: { timeout: number; maxRetries: number },
+  requireFresh = false,
 ): Promise<PosOrder> {
   const attempt = getCurrentAttempt(order);
   if (!attempt || !isPayOSActive(attempt.status) || attempt.status === "CREATING") {
     return order;
   }
-  const info = await getPayOS().paymentRequests.get(
-    attempt.orderCode,
-    requestOptions,
-  );
-  if (info.status === "PAID") {
-    const transaction = info.transactions[0];
-    const paymentResult = await markPayOSPaymentPaid(docRef, attempt.orderCode, {
-      code: "00",
-      orderCode: attempt.orderCode,
-      amount: info.amountPaid,
-      currency: "VND",
-      paymentLinkId: info.id,
-      reference: transaction?.reference,
-      transactionDateTime: transaction?.transactionDateTime,
-    });
-    if (paymentResult === "REJECTED") {
-      throw new HttpsError(
-        "data-loss",
-        "PayOS báo đã thanh toán nhưng số tiền không khớp đơn hàng.",
-      );
+  return withPayOSCheckLease(docRef, attempt.orderCode, requireFresh, async () => {
+    const info = await getPayOS().paymentRequests.get(
+      attempt.orderCode,
+      requestOptions ?? { timeout: 4000, maxRetries: 0 },
+    );
+    if (info.status === "PAID") {
+      const transaction = info.transactions[0];
+      const paymentResult = await markPayOSPaymentPaid(docRef, attempt.orderCode, {
+        code: "00",
+        orderCode: attempt.orderCode,
+        amount: info.amountPaid,
+        currency: "VND",
+        paymentLinkId: info.id,
+        reference: transaction?.reference,
+        transactionDateTime: transaction?.transactionDateTime,
+      });
+      if (paymentResult === "REJECTED") {
+        throw new HttpsError(
+          "data-loss",
+          "PayOS báo đã thanh toán nhưng số tiền không khớp đơn hàng.",
+        );
+      }
+      const paidSnapshot = await docRef.get();
+      return paidSnapshot.data() as PosOrder;
     }
-    const paidSnapshot = await docRef.get();
-    return paidSnapshot.data() as PosOrder;
-  }
-  return updateAttemptStatus(docRef, attempt.orderCode, info.status);
+    return updateAttemptStatus(docRef, attempt.orderCode, info.status);
+  });
 }
 
 async function createPaymentLinkForOrder(
@@ -645,8 +681,8 @@ async function createPaymentLinkForOrder(
   order: PosOrder,
 ): Promise<PosOrder> {
   const docRef = db.collection(POS_COLLECTIONS.orders).doc(order.localOrderId);
-  const { attempt } = await reservePaymentAttempt(docRef, userId);
-  const createdOrder = await storeCreatedPaymentLink(docRef, attempt);
+  const reserved = await reservePaymentAttempt(docRef, userId);
+  const createdOrder = await storeCreatedPaymentLink(docRef, reserved.attempt, reserved.order);
   const createdAttempt = getCurrentAttempt(createdOrder);
   if (createdOrder.status === "DRAFT" && createdAttempt?.status === "PAID") {
     await markPayOSPaymentPaid(docRef, createdAttempt.orderCode, {
@@ -703,6 +739,7 @@ async function createPayOSOrFallback(
   }
 
   const attempt = getCurrentAttempt(createdOrder);
+  if (isCompletedOrderStatus(createdOrder.status) || attempt && ["CANCELLED", "EXPIRED"].includes(attempt.status)) return createdOrder;
   if (!attempt || attempt.qrCode) return createdOrder;
 
   if (isPayOSActive(attempt.status)) {
@@ -738,7 +775,7 @@ export async function createPayOSPaymentForUser(
     .doc(localOrderId)
     .get();
   if (existingSnapshot.exists) {
-    const { docRef, order } = await getAuthorizedOrder(userId, localOrderId);
+    const { docRef, order } = await getAuthorizedOrder(userId, localOrderId, existingSnapshot);
     if (isCompletedOrderStatus(order.status)) {
       return buildPaymentResult(order);
     }
@@ -757,7 +794,7 @@ export async function createPayOSPaymentForUser(
     }
   }
 
-  const stagedOrder = await stagePosOrderForPayOS(userId, data);
+  const stagedOrder = await stagePosOrderForPayOS(userId, data, existingSnapshot);
   const createdOrder = await createPayOSOrFallback(userId, stagedOrder);
   return buildPaymentResult(createdOrder);
 }
@@ -799,7 +836,7 @@ export async function handlePayOSPaymentTimeoutForUser(
   const { docRef, order } = await getAuthorizedOrder(userId, localOrderId);
   if (isFixedTransferActive(order)) return buildPaymentResult(order);
   try {
-    const synchronized = await syncPayOSOrder(docRef, order);
+    const synchronized = await syncPayOSOrder(docRef, order, undefined, true);
     return buildPaymentResult(synchronized);
   } catch (error: unknown) {
     if (error instanceof HttpsError) throw error;
@@ -921,6 +958,7 @@ export async function confirmPayOSPaymentManuallyForUser(
       paidAt: confirmedAt,
       updatedAt: confirmedAt,
     });
+    writePaymentStatus(transaction, nextOrder);
     return nextOrder;
   });
   return buildPaymentResult(confirmedOrder);
@@ -958,6 +996,7 @@ export async function resumePayOSPaymentForUser(
     const order = snapshot.data() as PosOrder;
     const details = order.paymentDetails;
     const current = getCurrentAttempt(order);
+    if (isCompletedOrderStatus(order.status) || current?.status === "PAID") return order;
     if (!details || !current || current.orderCode !== attempt.orderCode) {
       throw new HttpsError("aborted", "Phiên thanh toán đã thay đổi.");
     }
@@ -965,6 +1004,7 @@ export async function resumePayOSPaymentForUser(
     const paymentDetails = replaceAttempt(details, resumedAttempt);
     const updatedAt = new Date().toISOString();
     transaction.update(authorized.docRef, { paymentDetails, updatedAt });
+    writePaymentStatus(transaction, { ...order, paymentDetails, updatedAt });
     return { ...order, paymentDetails, updatedAt } as PosOrder;
   });
   return buildPaymentResult(nextOrder);
@@ -1040,6 +1080,7 @@ async function cancelAttemptLocallyAfterPayOSFailure(
       updatedAt: now,
     };
     transaction.update(docRef, { paymentDetails, updatedAt: now });
+    writePaymentStatus(transaction, nextOrder);
     return nextOrder;
   });
 

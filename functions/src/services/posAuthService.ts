@@ -3,6 +3,7 @@ import type {
   DocumentSnapshot,
   QueryDocumentSnapshot,
 } from "firebase-admin/firestore";
+import { requestAuthSession } from "./posRequestContext";
 import { SHARED_AUTH_COLLECTIONS } from "../config/collections";
 import { db } from "../config/firebase";
 import type {
@@ -231,7 +232,7 @@ export async function resolvePosLoginEmail(
   return getUsableEmail(await getUserById(linkedUserIds[0]));
 }
 
-export async function getPosAuthSession(
+async function loadPosAuthSession(
   userId: string,
   deviceWarehouseId?: string,
 ): Promise<PosAuthSessionData> {
@@ -284,4 +285,11 @@ export async function getPosAuthSession(
     permissions,
     warehouses: accessibleWarehouses,
   };
+}
+
+export function getPosAuthSession(userId: string, deviceWarehouseId?: string): Promise<PosAuthSessionData> {
+  return requestAuthSession(
+    JSON.stringify([userId, deviceWarehouseId ?? null]),
+    () => loadPosAuthSession(userId, deviceWarehouseId),
+  );
 }

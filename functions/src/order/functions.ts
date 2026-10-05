@@ -4,7 +4,7 @@ import {
 } from "firebase-functions/v2/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
-import type { DocumentReference } from "firebase-admin/firestore";
+import type { DocumentReference, DocumentSnapshot } from "firebase-admin/firestore";
 import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { isProductAvailableForWarehouse } from "../services/productVisibilityPolicy";
@@ -450,50 +450,57 @@ function hasScopedPermission(
 export async function stagePosOrderForPayOS(
   userId: string,
   data: unknown,
+  initialSnapshot?: DocumentSnapshot,
 ): Promise<PosOrder> {
   const input = validateOrderInput(data);
   const docRef = db.collection(POS_COLLECTIONS.orders).doc(input.localOrderId);
-  const existingSnapshot = await docRef.get();
+  const existingSnapshot = initialSnapshot ?? await docRef.get();
   if (existingSnapshot.exists) {
     const existing = existingSnapshot.data() as PosOrder;
     if (existing.orderKind === "MEMBER_PACKAGE") {
       await assertWarehouseAccess(userId, input.warehouseId);
-      if (existing.createdBy !== userId) {
-        throw new HttpsError(
-          "permission-denied",
-          "Bạn không có quyền tạo thanh toán cho đơn bán gói này.",
-        );
-      }
-      if (
-        existing.status !== "DRAFT" ||
-        existing.shopId !== input.shopId ||
-        existing.warehouseId !== input.warehouseId ||
-        existing.items.length !== 1 ||
-        input.items.length !== 1 ||
-        existing.items[0].goodsId !== input.items[0].goodsId ||
-        input.items[0].quantity !== 1
-      ) {
-        throw new HttpsError(
-          "failed-precondition",
-          "Đơn bán gói không còn phù hợp để tạo mã chuyển khoản.",
-        );
-      }
-      const updatedAt = new Date().toISOString();
-      await docRef.update({
-        ...(input.deviceId ? { deviceId: input.deviceId } : {}),
-        paymentMethod: "QR_CODE",
-        paymentMethodId: "QR_CODE",
-        paymentMethodName: "Chuyển khoản",
-        updatedAt,
+      return db.runTransaction(async (transaction) => {
+        const freshSnapshot = await transaction.get(docRef);
+        if (!freshSnapshot.exists) throw new HttpsError("not-found", "Không tìm thấy đơn bán gói.");
+        const existing = freshSnapshot.data() as PosOrder;
+        if (existing.createdBy !== userId) {
+          throw new HttpsError(
+            "permission-denied",
+            "Bạn không có quyền tạo thanh toán cho đơn bán gói này.",
+          );
+        }
+        if (
+          existing.orderKind !== "MEMBER_PACKAGE" ||
+          existing.status !== "DRAFT" ||
+          existing.shopId !== input.shopId ||
+          existing.warehouseId !== input.warehouseId ||
+          existing.items.length !== 1 ||
+          input.items.length !== 1 ||
+          existing.items[0].goodsId !== input.items[0].goodsId ||
+          input.items[0].quantity !== 1
+        ) {
+          throw new HttpsError(
+            "failed-precondition",
+            "Đơn bán gói không còn phù hợp để tạo mã chuyển khoản.",
+          );
+        }
+        const updatedAt = new Date().toISOString();
+        transaction.update(docRef, {
+          ...(input.deviceId ? { deviceId: input.deviceId } : {}),
+          paymentMethod: "QR_CODE",
+          paymentMethodId: "QR_CODE",
+          paymentMethodName: "Chuyển khoản",
+          updatedAt,
+        });
+        return {
+          ...existing,
+          ...(input.deviceId ? { deviceId: input.deviceId } : {}),
+          paymentMethod: "QR_CODE",
+          paymentMethodId: "QR_CODE",
+          paymentMethodName: "Chuyển khoản",
+          updatedAt,
+        };
       });
-      return {
-        ...existing,
-        ...(input.deviceId ? { deviceId: input.deviceId } : {}),
-        paymentMethod: "QR_CODE",
-        paymentMethodId: "QR_CODE",
-        paymentMethodName: "Chuyển khoản",
-        updatedAt,
-      };
     }
   }
   const [operator, items] = await Promise.all([

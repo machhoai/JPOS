@@ -1,4 +1,6 @@
 import * as logger from "firebase-functions/logger";
+import { withPosRequestContext } from "../services/posRequestContext";
+import { createPaymentWatch } from "./paymentStatusProjection";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import {
   payosApiKeySecret,
@@ -32,7 +34,7 @@ export const payosPayment = onCall(
       payosChecksumKeySecret,
     ],
   },
-  async (request) => {
+  async (request) => withPosRequestContext(async () => {
     const device = await assertActivePosDevice(request.data);
     if (!request.auth) {
       throw new HttpsError(
@@ -42,6 +44,7 @@ export const payosPayment = onCall(
     }
 
     const action = request.data?.action;
+    const userId = request.auth.uid;
     const payload = request.data?.payload;
     if (
       typeof payload?.warehouseId === "string" &&
@@ -52,63 +55,75 @@ export const payosPayment = onCall(
         "Máy POS không được phép thanh toán tại cửa hàng này.",
       );
     }
-    try {
-      if (action === "create") {
-        return await createPayOSPaymentForUser(request.auth.uid, {
-          ...payload,
-          deviceId: device.id,
+    const result = await (async () => {
+      try {
+        if (action === "watch") {
+          return await createPaymentWatch(userId, device, payload?.localOrderId);
+        }
+        if (action === "create") {
+          return await createPayOSPaymentForUser(userId, {
+            ...payload,
+            deviceId: device.id,
+          });
+        }
+        if (action === "status") {
+          return await getPayOSPaymentStatusForUser(userId, payload);
+        }
+        if (action === "timeout") {
+          return await handlePayOSPaymentTimeoutForUser(
+            userId,
+            payload,
+          );
+        }
+        if (action === "resume") {
+          return await resumePayOSPaymentForUser(userId, payload);
+        }
+        if (action === "recreate") {
+          return await recreatePayOSPaymentForUser(userId, payload);
+        }
+        if (action === "cancel") {
+          return await cancelPayOSPaymentForUser(userId, payload);
+        }
+        if (action === "manual-confirm") {
+          return await confirmPayOSPaymentManuallyForUser(
+            userId,
+            payload,
+          );
+        }
+        if (action === "get-fallback-settings") {
+          return await getFixedTransferSettingsForUser(
+            userId,
+            payload,
+            device.id,
+          );
+        }
+        if (action === "save-fallback-settings") {
+          return await saveFixedTransferSettingsForUser(
+            userId,
+            payload,
+            device.id,
+          );
+        }
+        throw new HttpsError("invalid-argument", "Thao tác PayOS không hợp lệ.");
+      } catch (error: unknown) {
+        if (error instanceof HttpsError) throw error;
+        logger.error("[PayOS callable] Xử lý thanh toán thất bại", {
+          uid: userId,
+          action,
+          error,
         });
-      }
-      if (action === "status") {
-        return await getPayOSPaymentStatusForUser(request.auth.uid, payload);
-      }
-      if (action === "timeout") {
-        return await handlePayOSPaymentTimeoutForUser(
-          request.auth.uid,
-          payload,
+        throw new HttpsError(
+          "internal",
+          "Không thể xử lý thanh toán PayOS. Vui lòng thử lại.",
         );
       }
-      if (action === "resume") {
-        return await resumePayOSPaymentForUser(request.auth.uid, payload);
-      }
-      if (action === "recreate") {
-        return await recreatePayOSPaymentForUser(request.auth.uid, payload);
-      }
-      if (action === "cancel") {
-        return await cancelPayOSPaymentForUser(request.auth.uid, payload);
-      }
-      if (action === "manual-confirm") {
-        return await confirmPayOSPaymentManuallyForUser(
-          request.auth.uid,
-          payload,
-        );
-      }
-      if (action === "get-fallback-settings") {
-        return await getFixedTransferSettingsForUser(
-          request.auth.uid,
-          payload,
-          device.id,
-        );
-      }
-      if (action === "save-fallback-settings") {
-        return await saveFixedTransferSettingsForUser(
-          request.auth.uid,
-          payload,
-          device.id,
-        );
-      }
-      throw new HttpsError("invalid-argument", "Thao tác PayOS không hợp lệ.");
-    } catch (error: unknown) {
-      if (error instanceof HttpsError) throw error;
-      logger.error("[PayOS callable] Xử lý thanh toán thất bại", {
-        uid: request.auth.uid,
-        action,
-        error,
-      });
-      throw new HttpsError(
-        "internal",
-        "Không thể xử lý thanh toán PayOS. Vui lòng thử lại.",
-      );
-    }
-  },
+    })();
+    return {
+      ...result,
+      paymentRuntime: {
+        realtimeEnabled: device.paymentLatencyOptimizationEnabled,
+        pollingIntervalMs: device.paymentLatencyOptimizationEnabled ? 5000 : 15000,
+      },
+    };
+  }),
 );

@@ -19,6 +19,8 @@ export const SHARED_AUTH_COLLECTIONS = {
 export const POS_COLLECTIONS = {
   products: "jpos_products",
   orders: "pos_orders",
+  paymentStatus: "pos_payment_status",
+  paymentChecks: "pos_payment_checks",
   orderSummaries: "pos_order_summaries",
   paymentSettings: "pos_payment_settings",
   luckyDrawSettings: "pos_lucky_draw_settings",

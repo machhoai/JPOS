@@ -99,6 +99,10 @@ export interface PayOSPaymentAttempt {
   updatedAt?: string;
   paidAt?: string;
   paidAmount?: number;
+  qrReadyAt?: string;
+  createRequestStartedAt?: string;
+  confirmationSource?: "WEBHOOK" | "API_CHECK";
+  webhookReceivedAt?: string;
   reference?: string;
   transactionDateTime?: string;
   error?: string;
@@ -165,6 +169,8 @@ export interface FixedTransferDetails {
  *                                 → SYNC_FAILED (retryable)
  */
 export interface PosOrder {
+  /** Opaque ID for the device-scoped payment status projection. */
+  paymentWatchId?: string;
   /** Unique local order ID, e.g., 'ORD-1715420000-001' */
   localOrderId: string;
 

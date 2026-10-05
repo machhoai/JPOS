@@ -68,6 +68,7 @@ export function usePayOSCheckoutController({
   const manualConfirmation = usePayOSPaymentStore(
     (state) => state.manualConfirmation,
   );
+  const manuallyConfirmed = usePayOSPaymentStore((state) => state.manuallyConfirmed);
   const startPayment = usePayOSPaymentStore((state) => state.startPayment);
   const refreshPayment = usePayOSPaymentStore((state) => state.refreshPayment);
   const retryPaymentDisplay = usePayOSPaymentStore(
@@ -123,7 +124,7 @@ export function usePayOSCheckoutController({
       orderKind,
       warehouseId,
       details: {
-        paymentMethod: manualConfirmation || fixedTransfer?.status === "MANUALLY_CONFIRMED"
+        paymentMethod: manuallyConfirmed || manualConfirmation || fixedTransfer?.status === "MANUALLY_CONFIRMED"
           ? "MANUAL_TRANSFER"
           : "PAYOS",
         orderStatus: orderStatus ?? "LOCAL_PAID",
@@ -131,7 +132,7 @@ export function usePayOSCheckoutController({
     });
     onCompleted(localOrderId, orderStatus ?? "LOCAL_PAID");
     if (
-      manualConfirmation ||
+      manuallyConfirmed || manualConfirmation ||
       fixedTransfer?.status === "MANUALLY_CONFIRMED"
     ) {
       showWarning(
@@ -153,6 +154,7 @@ export function usePayOSCheckoutController({
   }, [
     localOrderId,
     manualConfirmation,
+    manuallyConfirmed,
     fixedTransfer,
     nextAction,
     onCompleted,

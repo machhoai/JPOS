@@ -1,6 +1,7 @@
 import type { OrderKind } from "@/lib/types/order";
 
 export type CheckoutTelemetryEvent =
+  | "payment_status_received"
   | "payment_detected"
   | "openapi_prepare_started"
   | "openapi_prepare_completed"

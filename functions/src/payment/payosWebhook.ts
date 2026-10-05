@@ -27,6 +27,7 @@ export const payosWebhook = onRequest(
     ],
   },
   async (request, response) => {
+    const webhookReceivedAt = new Date().toISOString();
     if (request.method !== "POST") {
       response.set("Allow", "POST").status(405).json({ success: false });
       return;
@@ -101,6 +102,8 @@ export const payosWebhook = onRequest(
           paymentLinkId: webhookData.paymentLinkId,
           reference: webhookData.reference,
           transactionDateTime: webhookData.transactionDateTime,
+          confirmationSource: "WEBHOOK",
+          webhookReceivedAt,
         },
       );
       if (paymentResult === "REJECTED") {
@@ -119,6 +122,7 @@ export const payosWebhook = onRequest(
         localOrderId: orderQuery.docs[0].id,
         orderCode: webhookData.orderCode,
         result: paymentResult,
+        webhookReceivedAt,
       });
       response.status(200).json({ success: true });
     } catch (error: unknown) {

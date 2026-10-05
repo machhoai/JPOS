@@ -2,17 +2,20 @@
 
 import { useEffect } from "react";
 import { usePayOSPaymentStore } from "@/lib/stores/usePayOSPaymentStore";
+import { usePaymentStatusWatch } from "@/lib/hooks/usePaymentStatusWatch";
 
 const ORDER_STATUS_POLL_INTERVAL_MS = 2000;
-const PAYOS_FALLBACK_INTERVAL_MS = 15000;
-const TIMEOUT_GUARD_MS = 35000;
 const COUNTDOWN_INTERVAL_MS = 1000;
 
 /**
  * Runs the QR countdown and watches webhook-driven order completion.
- * Only the expiry callback performs the mandatory final PayOS API check.
+ * Realtime delivers confirmation; periodic PayOS checks provide redundancy.
  */
 export function usePayOSPaymentTimer(enabled = true): void {
+  const realtimeEnabled = usePayOSPaymentStore((state) => state.realtimeEnabled);
+  const pollingIntervalMs = usePayOSPaymentStore((state) => state.pollingIntervalMs);
+  usePaymentStatusWatch(enabled && realtimeEnabled);
+  const realtimeHealthy = usePayOSPaymentStore((state) => state.realtimeHealthy);
   const session = usePayOSPaymentStore((state) => state.session);
   const nextAction = usePayOSPaymentStore((state) => state.nextAction);
   const serverClockOffsetMs = usePayOSPaymentStore(
@@ -61,6 +64,7 @@ export function usePayOSPaymentTimer(enabled = true): void {
   useEffect(() => {
     if (
       !enabled ||
+      realtimeHealthy ||
       nextAction === "COMPLETED" ||
       nextAction === "FALLBACK"
     ) return;
@@ -79,7 +83,7 @@ export function usePayOSPaymentTimer(enabled = true): void {
       active = false;
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [checkOrderCompletion, enabled, nextAction]);
+  }, [checkOrderCompletion, enabled, nextAction, realtimeHealthy]);
 
   useEffect(() => {
     if (!enabled || !session || nextAction !== "WAIT") return;
@@ -88,12 +92,9 @@ export function usePayOSPaymentTimer(enabled = true): void {
       const state = usePayOSPaymentStore.getState();
       const activeSession = state.session;
       if (!activeSession || state.nextAction !== "WAIT") return;
-      const deadlineMs = Date.parse(activeSession.displayExpiresAt) -
-        state.serverClockOffsetMs;
-      if (deadlineMs - Date.now() <= TIMEOUT_GUARD_MS) return;
       void fallbackCheck();
-    }, PAYOS_FALLBACK_INTERVAL_MS);
+    }, pollingIntervalMs);
 
     return () => window.clearInterval(intervalId);
-  }, [enabled, fallbackCheck, nextAction, session]);
+  }, [enabled, fallbackCheck, nextAction, pollingIntervalMs, session]);
 }

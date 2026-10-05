@@ -3,6 +3,7 @@ import { HttpsError } from "firebase-functions/v2/https";
 import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { getPosAuthSession } from "../services/posAuthService";
+import { writePaymentStatus } from "./paymentStatusProjection";
 import {
   applyOrderVouchers,
   releaseOrderVoucherReservations,
@@ -259,6 +260,7 @@ export async function activateFixedTransferForOrder(
       fixedTransferDetails,
       updatedAt: now,
     });
+    writePaymentStatus(transaction, { ...freshOrder, fixedTransferDetails, updatedAt: now });
     return { ...freshOrder, fixedTransferDetails, updatedAt: now };
   });
 }
@@ -330,6 +332,7 @@ export async function confirmFixedTransferForOrder(
       paidAt: confirmedAt,
       updatedAt: confirmedAt,
     });
+    writePaymentStatus(transaction, nextOrder);
     return nextOrder;
   });
 }
@@ -363,6 +366,7 @@ export async function cancelFixedTransferForOrder(
       "Released after fixed-transfer cancellation",
     );
     transaction.update(docRef, { fixedTransferDetails, updatedAt });
+    writePaymentStatus(transaction, { ...order, fixedTransferDetails, updatedAt });
     return { ...order, fixedTransferDetails, updatedAt };
   });
 }
