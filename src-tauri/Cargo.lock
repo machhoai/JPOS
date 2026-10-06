@@ -2355,7 +2355,7 @@ dependencies = [
 
 [[package]]
 name = "pos-system"
-version = "0.1.59"
+version = "0.1.60"
 dependencies = [
  "serde",
  "serde_json",

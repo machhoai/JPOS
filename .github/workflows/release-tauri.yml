@@ -47,6 +47,28 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify production release environment
+        shell: pwsh
+        run: |
+          if ($env:NEXT_PUBLIC_FIREBASE_PROJECT_ID -ne "jw-system-f2104") {
+            throw "Release must use the production Firebase project."
+          }
+          if ($env:NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN -ne "jw-system-f2104.firebaseapp.com") {
+            throw "Release must use the production Firebase auth domain."
+          }
+          if ($env:NEXT_PUBLIC_JPOS_TEST_MODE -eq "true") {
+            throw "A test app cannot be published through the production updater."
+          }
+          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if ($config.identifier -ne "com.jpos.system" -or $config.productName -ne "JPOS") {
+            throw "Release must retain the production application identity."
+          }
+          if (-not $config.plugins.updater.pubkey -or -not $config.bundle.createUpdaterArtifacts) {
+            throw "Release requires configured and signed updater artifacts."
+          }
+          node --test test/*.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build and publish JPOS
         uses: tauri-apps/tauri-action@v1
         env:
@@ -59,9 +81,10 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Tự mở két một lần khi thanh toán tiền mặt thành công, dùng máy in đã chọn trong cài đặt.
-            - Thêm cấu hình chân kích, nút thử/mở thủ công theo quyền và lựa chọn lệnh ESC/POS hoặc TSPL cho 365B ở chế độ in tem.
-            - In lại bill, in vé và thanh toán chuyển khoản không tự mở két; lỗi thiết bị không ảnh hưởng đơn đã thanh toán.
+            - Tối ưu đường tạo mã thanh toán PayOS và nhận trạng thái thành công qua Firestore realtime.
+            - Kiểm tra PayOS theo chu kỳ 5 giây khi máy được bật tối ưu; tự chuyển sang polling dự phòng nếu realtime gặp lỗi hoặc mất mạng.
+            - Đồng bộ lease/backoff giữa các instance để hạn chế gọi PayOS trùng; xử lý an toàn khi hủy hoặc tạo lại mã sát thời điểm nhận tiền.
+            - Giữ kiểm tra quyền, thiết bị, số tiền và chữ ký webhook; không thay đổi ý nghĩa thời điểm thanh toán của đơn.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: true
