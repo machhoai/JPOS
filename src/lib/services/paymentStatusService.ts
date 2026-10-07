@@ -3,7 +3,7 @@ import { httpsCallable } from "firebase/functions";
 import { db, functions } from "@/lib/firebase/client";
 import { POS_CLIENT_COLLECTIONS } from "@/lib/firebase/collections";
 import { withDeviceAuth } from "@/lib/services/deviceEnrollmentService";
-import type { OrderStatus, PayOSPaymentStatus } from "@/lib/types/order";
+import type { OrderStatus, PayOSPaymentStatus, PaymentVerificationStatus } from "@/lib/types/order";
 
 export interface PaymentStatusSnapshot {
   confirmationSource?: "WEBHOOK" | "API_CHECK" | "MANUAL" | null;
@@ -11,6 +11,8 @@ export interface PaymentStatusSnapshot {
   orderCode: number | null;
   orderStatus: OrderStatus;
   paymentStatus: PayOSPaymentStatus | null;
+  paymentVerificationStatus?: PaymentVerificationStatus;
+  providerConfirmedAt?: string | null;
   paidAt: string | null;
   updatedAt: string;
 }

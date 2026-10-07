@@ -146,6 +146,7 @@ export async function fetchOrderForReceipt(
 export interface OrderHistoryResult {
   orders: PosOrder[];
   fetchedAt: string;
+  reconciliationIncomplete?: boolean;
 }
 
 export interface OrderHistoryQuery {
@@ -184,11 +185,11 @@ export async function fetchCloseoutOrders(
   query: CloseoutOrderQuery,
 ): Promise<OrderHistoryResult> {
   const callable = httpsCallable<
-    { action: "getCloseoutOrders"; payload: CloseoutOrderQuery },
+    { action: "reconcile-closeout"; payload: CloseoutOrderQuery },
     OrderHistoryResult
-  >(functions, "getPosAuthSession");
+  >(functions, "payosPayment");
   const result = await callable(await withDeviceAuth({
-    action: "getCloseoutOrders" as const,
+    action: "reconcile-closeout" as const,
     payload: query,
   }));
   const response: unknown = result.data;

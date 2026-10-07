@@ -4,7 +4,7 @@
 // Trang Lịch sử Đơn hàng — /orders (Giao diện Row Card Hiện Đại)
 // =============================================================================
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { useOrderHistoryStore } from "@/lib/stores/useOrderHistoryStore";
@@ -12,6 +12,8 @@ import type { PosOrder } from "@/lib/types/order";
 import Sidebar from "@/components/layout/Sidebar";
 import OrderFilters, { DEFAULT_FILTERS, type OrderFilterState } from "@/components/orders/OrderFilters";
 import OrderTable from "@/components/orders/OrderTable";
+import OrderNotificationTarget from "@/components/orders/OrderNotificationTarget";
+import type { OrderNotificationTarget as NotificationTarget } from "@/features/payments/helpers/orderNotificationLink";
 import OrderDetailModal from "@/components/orders/OrderDetailModal";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { filterAndSortOrders } from "@/lib/utils/filterOrders";
@@ -47,6 +49,16 @@ export default function OrderHistoryPage() {
     const [selectedDate, setSelectedDate] = useState(() => getVietnamDateInputValue());
     const [selectedOrder, setSelectedOrder] = useState<PosOrder | null>(null);
     const [isRetrying, setIsRetrying] = useState(false);
+    const [notificationTarget, setNotificationTarget] = useState<NotificationTarget | null>(null);
+    const [highlightedOrderId, setHighlightedOrderId] = useState<string | null>(null);
+    const scrolledTarget = useRef<string | null>(null);
+    const focusNotification = useCallback((target: NotificationTarget) => {
+        setFilters(DEFAULT_FILTERS);
+        setSelectedDate(target.date);
+        setSelectedOrder(null);
+        setNotificationTarget(target);
+        setHighlightedOrderId(null);
+    }, []);
 
     // Zustand store
     const orders = useOrderHistoryStore((state) =>
@@ -114,6 +126,30 @@ export default function OrderHistoryPage() {
             : [],
         [effectiveFilters, effectiveWarehouseId, orders],
     );
+
+    useEffect(() => {
+        const historyState = useOrderHistoryStore.getState();
+        if (!notificationTarget || selectedDate !== notificationTarget.date || isLoadingOrders ||
+            !historyQuery || historyState.isLoading ||
+            historyState.queryKey !== `${historyQuery.warehouseId}:${historyQuery.startAt}:${historyQuery.endAt}` ||
+            scrolledTarget.current === notificationTarget.key ||
+            !filteredOrders.some((order) => order.localOrderId === notificationTarget.orderId)) return;
+        const frame = requestAnimationFrame(() => {
+            const row = document.getElementById(`order-${notificationTarget.orderId}`);
+            if (!row) return;
+            row.scrollIntoView({ behavior: "smooth", block: "center" });
+            row.focus({ preventScroll: true });
+            scrolledTarget.current = notificationTarget.key;
+            setHighlightedOrderId(notificationTarget.orderId);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [notificationTarget, selectedDate, isLoadingOrders, filteredOrders, historyQuery]);
+
+    useEffect(() => {
+        if (!highlightedOrderId) return;
+        const timer = setTimeout(() => setHighlightedOrderId(null), 6000);
+        return () => clearTimeout(timer);
+    }, [highlightedOrderId]);
 
     const handleRetrySync = useCallback(async (orderToRetry?: PosOrder) => {
         const targetOrder = orderToRetry || selectedOrder;
@@ -241,6 +277,10 @@ export default function OrderHistoryPage() {
                     </div>
                 </header>
 
+                <Suspense fallback={null}>
+                    <OrderNotificationTarget onTarget={focusNotification} />
+                </Suspense>
+
                 {/* Main Content Area */}
                 <div className="flex-1 overflow-y-auto">
                     <div className="mx-auto space-y-4 p-2 pt-3">
@@ -331,6 +371,7 @@ export default function OrderHistoryPage() {
                                 onSelectOrder={setSelectedOrder}
                                 onRetrySync={(order) => void handleRetrySync(order)}
                                 isLoading={isLoadingOrders && orders.length === 0}
+                                highlightedOrderId={highlightedOrderId}
                             />
                         )}
                     </div>

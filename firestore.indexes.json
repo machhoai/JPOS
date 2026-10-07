@@ -4,6 +4,14 @@
       "collectionGroup": "pos_orders",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "warehouseId", "order": "ASCENDING" },
+        { "fieldPath": "paymentVerificationStatus", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pos_orders",
+      "queryScope": "COLLECTION",
+      "fields": [
         {
           "fieldPath": "status",
           "order": "ASCENDING"

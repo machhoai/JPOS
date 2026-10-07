@@ -15,6 +15,7 @@ interface CloseoutPrintButtonProps {
   report: CloseoutReport | null;
   meta: CloseoutReportMeta | null;
   className?: string;
+  refreshBeforePrint?: () => Promise<{ report: CloseoutReport; meta: CloseoutReportMeta } | undefined>;
 }
 
 async function printCloseoutReport(
@@ -71,6 +72,7 @@ const CloseoutPrintButton: React.FC<CloseoutPrintButtonProps> = ({
   report,
   meta,
   className = "",
+  refreshBeforePrint,
 }) => {
   const [isPrinting, setIsPrinting] = useState(false);
   const settings = useReceiptSettingsStore((state) => state.settings);
@@ -79,9 +81,14 @@ const CloseoutPrintButton: React.FC<CloseoutPrintButtonProps> = ({
     if (!report || !meta) return;
     setIsPrinting(true);
     try {
+      const latest = refreshBeforePrint ? await refreshBeforePrint() : { report, meta };
+      if (!latest) return;
+      if (latest.report.payosPendingOrders.length > 0 && !window.confirm(
+        `Còn ${latest.report.payosPendingOrders.length} đơn PayOS chưa được xác nhận đã nhận tiền. Bạn đã kiểm tra danh sách và muốn in báo cáo có cảnh báo?`,
+      )) return;
       await printCloseoutReport(
         RECEIPT_PAPER_PROFILES[settings.paperSize].paperWidthMm,
-        <CloseoutReceiptDocument report={report} meta={meta} settings={settings} />,
+        <CloseoutReceiptDocument report={latest.report} meta={latest.meta} settings={settings} />,
       );
     } catch (error: unknown) {
       console.error("[Kết ca] Không thể in báo cáo:", error);
@@ -92,7 +99,7 @@ const CloseoutPrintButton: React.FC<CloseoutPrintButtonProps> = ({
     } finally {
       setIsPrinting(false);
     }
-  }, [meta, report, settings]);
+  }, [meta, report, settings, refreshBeforePrint]);
 
   return (
     <button

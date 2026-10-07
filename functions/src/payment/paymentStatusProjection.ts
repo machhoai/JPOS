@@ -11,6 +11,8 @@ export function paymentStatusSnapshot(order: PosOrder) {
     (candidate) => candidate.orderCode === order.paymentDetails?.currentOrderCode,
   );
   const paidAttempt = order.paymentDetails?.attempts.find(
+    (candidate) => candidate.status === "PAID" && candidate.orderCode === order.payosReconciliation?.orderCode,
+  ) ?? order.paymentDetails?.attempts.find(
     (candidate) => candidate.status === "PAID" && candidate.paidAt === order.paidAt,
   ) ?? (attempt?.status === "PAID" ? attempt : null);
   return {
@@ -19,6 +21,8 @@ export function paymentStatusSnapshot(order: PosOrder) {
     orderStatus: order.status,
     orderCode: attempt?.orderCode ?? null,
     paymentStatus: attempt?.status ?? null,
+    paymentVerificationStatus: order.paymentVerificationStatus ?? "VERIFIED",
+    providerConfirmedAt: order.payosReconciliation?.verifiedAt ?? paidAttempt?.paidAt ?? null,
     paidAt: order.paidAt ?? paidAttempt?.paidAt ?? null,
     confirmationSource: order.paymentVerificationStatus === "UNVERIFIED" && order.status !== "DRAFT"
       ? "MANUAL" : paidAttempt?.confirmationSource ?? null,

@@ -42,7 +42,7 @@ test("realtime projection does not include member, QR, invoice token or bank dat
   });
   assert.equal(value.orderStatus, "LOCAL_PAID");
   assert.equal(value.paidAt, "paid");
-  assert.deepEqual(Object.keys(value).sort(), ["confirmationSource", "localOrderId", "orderCode", "orderKind", "orderStatus", "paidAt", "paymentStatus", "updatedAt"].sort());
+  assert.deepEqual(Object.keys(value).sort(), ["confirmationSource", "localOrderId", "orderCode", "orderKind", "orderStatus", "paidAt", "paymentStatus", "paymentVerificationStatus", "providerConfirmedAt", "updatedAt"].sort());
 });
 
 test("a paid historical QR keeps the source of the first order confirmation", () => {

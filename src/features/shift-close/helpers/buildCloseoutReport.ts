@@ -5,6 +5,7 @@ import type {
   CloseoutReport,
 } from "@/features/shift-close/types/closeout";
 import { isOrderRevenueEligible } from "@/lib/utils/orderLifecycle";
+import { isPayOSOrder, needsPayOSReconciliation } from "@/features/payments/helpers/payOSReconciliation";
 
 const PAYMENT_METHOD_NAMES: Record<string, string> = {
   CASH: "Tiền mặt",
@@ -35,6 +36,15 @@ export function buildCloseoutReport(orders: PosOrder[]): CloseoutReport {
   let productQuantity = 0;
   let totalRevenue = 0;
   const revenueOrders = orders.filter(isOrderRevenueEligible);
+  const payosOrders = revenueOrders.filter(isPayOSOrder);
+  const payosPendingOrders = payosOrders.filter(needsPayOSReconciliation).map((order) => ({
+    localOrderId: order.localOrderId,
+    totalAmount: toMoney(order.totalAmount),
+    operatorName: order.paymentDetails?.manualConfirmation?.confirmedByName ?? order.operatorName ?? "Chưa rõ",
+    completedAt: order.paidAt ?? null,
+    lastCheckedAt: order.payosReconciliation?.lastCheckedAt ?? null,
+    lastError: order.payosReconciliation?.lastError ?? null,
+  }));
 
   for (const order of revenueOrders) {
     const orderAmount = toMoney(order.totalAmount);
@@ -84,6 +94,10 @@ export function buildCloseoutReport(orders: PosOrder[]): CloseoutReport {
     orderCount: revenueOrders.length,
     productQuantity,
     totalRevenue,
+    payosVerifiedAmount: payosOrders.filter((order) => order.paymentVerificationStatus !== "UNVERIFIED")
+      .reduce((sum, order) => sum + toMoney(order.totalAmount), 0),
+    payosUnverifiedAmount: payosPendingOrders.reduce((sum, order) => sum + order.totalAmount, 0),
+    payosPendingOrders,
     products: Array.from(productMap.values()).sort((left, right) =>
       left.goodsName.localeCompare(right.goodsName, "vi"),
     ),

@@ -119,6 +119,19 @@ const CloseoutReceiptDocument: React.FC<CloseoutReceiptDocumentProps> = ({
                 </div>
             </section>
 
+            <section aria-label="Đối soát PayOS" style={{ borderTop: "1px dashed #000", marginTop: "3mm", paddingTop: "2mm" }}>
+                <div style={rowStyle}><span>PayOS đã xác nhận</span><span style={valueStyle}>{moneyFormatter.format(report.payosVerifiedAmount)}</span></div>
+                <div style={rowStyle}><span>PayOS chờ đối soát ({report.payosPendingOrders.length} đơn)</span><span style={valueStyle}>{moneyFormatter.format(report.payosUnverifiedAmount)}</span></div>
+                {report.payosPendingOrders.length > 0 && <div style={{ marginTop: "2mm", fontWeight: EMPHASIS_FONT_WEIGHT }}>CẢNH BÁO: PAYOS CHƯA XÁC NHẬN ĐÃ NHẬN TIỀN</div>}
+                {report.payosPendingOrders.map((order) => (
+                    <div key={order.localOrderId} style={{ marginTop: "2mm", overflowWrap: "anywhere" }}>
+                        <div>{order.localOrderId} · {moneyFormatter.format(order.totalAmount)}</div>
+                        <div>{order.operatorName}{order.completedAt ? ` · ${dateTimeFormatter.format(new Date(order.completedAt))}` : ""}</div>
+                        {order.lastError && <div>{order.lastError}</div>}
+                    </div>
+                ))}
+            </section>
+
             <div style={{ borderTop: "2px solid #000", margin: "3mm 0 2mm" }} />
             <section style={{ display: "grid", gap: "1.5mm" }}>
                 <div style={{ ...rowStyle, fontWeight: EMPHASIS_FONT_WEIGHT }}><span>TỔNG ĐƠN</span><span>{report.orderCount.toLocaleString("vi-VN")}</span></div>

@@ -13,6 +13,7 @@ export {
 export { onPosOrderSummaryChanged } from "./order/orderSummary";
 export { payosWebhook } from "./payment/payosWebhook";
 export { payosPayment } from "./payment/payosCallable";
+export { reconcilePendingPayOSPayments } from "./payment/payosReconciliation";
 
 import * as logger from "firebase-functions/logger";
 import { randomUUID } from "crypto";

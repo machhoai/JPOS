@@ -34,7 +34,8 @@ import {
     type CloseoutAccountScope,
 } from "@/lib/services/orderService";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
-import { showError } from "@/lib/utils/toast";
+import { showError, showWarning } from "@/lib/utils/toast";
+import { checkPendingPayOSOrder } from "@/features/payments/api/payOSReconciliationApi";
 
 const fieldClassName = "min-h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm font-semibold text-[var(--color-text-primary)] shadow-sm focus:border-[var(--color-accent)] focus:outline-none";
 
@@ -150,8 +151,12 @@ const ShiftClosePage: React.FC = () => {
                 warehouseId: effectiveWarehouseId,
                 scope: accountScope,
             });
-            setReport(buildCloseoutReport(result.orders));
-            setReportMeta({
+            const nextReport = buildCloseoutReport(result.orders);
+            setReport(nextReport);
+            if (result.reconciliationIncomplete) {
+                showWarning("Chưa kiểm tra hết các đơn PayOS", "Báo cáo vẫn liệt kê các đơn chờ đối soát. Vui lòng làm mới để tiếp tục kiểm tra.");
+            }
+            const nextMeta: CloseoutReportMeta = {
                 periodMode,
                 accountScope,
                 ...range,
@@ -162,7 +167,9 @@ const ShiftClosePage: React.FC = () => {
                         : "Tất cả tài khoản",
                 generatedBy: userDoc.full_name,
                 fetchedAt: result.fetchedAt,
-            });
+            };
+            setReportMeta(nextMeta);
+            return { report: nextReport, meta: nextMeta };
         } catch (error: unknown) {
             console.error("[Kết ca] Không thể tải báo cáo:", error);
             const message = getReportError(error);
@@ -247,8 +254,9 @@ const ShiftClosePage: React.FC = () => {
                             Làm mới
                         </button>
                         <CloseoutPrintButton
-                            report={hasPendingFilterChanges ? null : report}
+                            report={hasPendingFilterChanges || isLoading ? null : report}
                             meta={hasPendingFilterChanges ? null : reportMeta}
+                            refreshBeforePrint={loadReport}
                             className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#202124] px-4 text-xs font-bold text-white shadow-md transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                         />
                     </div>
@@ -321,6 +329,30 @@ const ShiftClosePage: React.FC = () => {
                             <MetricCard icon={<Package className="size-5" />} label="Sản phẩm đã bán" value={(report?.productQuantity || 0).toLocaleString("vi-VN")} tone="violet" />
                             <MetricCard icon={<Banknote className="size-5" />} label="Tổng doanh thu" value={formatCurrency(report?.totalRevenue || 0)} tone="orange" emphasized />
                         </section>
+
+                        {report && (
+                            <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" aria-label="Đối soát PayOS khi kết ca">
+                                <h2 className="font-bold">Đối soát PayOS</h2>
+                                <p>PayOS đã xác nhận: {formatCurrency(report.payosVerifiedAmount)}</p>
+                                <p>Chờ PayOS xác nhận: {report.payosPendingOrders.length} đơn · {formatCurrency(report.payosUnverifiedAmount)}</p>
+                                {report.payosPendingOrders.length > 0 && <p role="alert" className="mt-2 font-bold">Các đơn dưới đây đã hoàn thành thủ công nhưng PayOS chưa xác nhận đã nhận đủ tiền. Cần đối chiếu trước khi kết ca.</p>}
+                                {report.payosPendingOrders.map((order) => (
+                                    <div key={order.localOrderId} className="mt-3 rounded-lg border border-amber-200 bg-white p-3">
+                                        <p className="break-all font-semibold">{order.localOrderId} · {formatCurrency(order.totalAmount)}</p>
+                                        <p>{order.operatorName} · Hoàn thành: {order.completedAt ? formatDateTime(order.completedAt) : "Chưa rõ"}</p>
+                                        <p>Kiểm tra gần nhất: {order.lastCheckedAt ? formatDateTime(order.lastCheckedAt) : "Chưa kiểm tra"}</p>
+                                        {order.lastError && <p className="text-red-700">{order.lastError}</p>}
+                                        <button type="button" disabled={isLoading} className="mt-2 rounded border px-3 py-1 font-semibold" onClick={() => {
+                                            setIsLoading(true);
+                                            void checkPendingPayOSOrder(order.localOrderId)
+                                                .then(() => loadReport())
+                                                .catch((error: unknown) => showError("Không thể kiểm tra PayOS", getReportError(error)))
+                                                .finally(() => setIsLoading(false));
+                                        }}>Kiểm tra lại</button>
+                                    </div>
+                                ))}
+                            </section>
+                        )}
 
                         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
                             <section className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-white shadow-sm">

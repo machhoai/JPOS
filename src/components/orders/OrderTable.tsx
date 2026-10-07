@@ -12,6 +12,7 @@ interface OrderTableProps {
     onSelectOrder: (order: PosOrder) => void;
     onRetrySync?: (order: PosOrder, e: React.MouseEvent) => void;
     isLoading?: boolean;
+    highlightedOrderId?: string | null;
 }
 
 export default function OrderTable({
@@ -19,6 +20,7 @@ export default function OrderTable({
     onSelectOrder,
     onRetrySync,
     isLoading = false,
+    highlightedOrderId,
 }: OrderTableProps) {
     // Skeleton loading state
     if (isLoading) {
@@ -59,6 +61,7 @@ export default function OrderTable({
                     order={order}
                     onSelectOrder={onSelectOrder}
                     onRetrySync={onRetrySync}
+                    isHighlighted={order.localOrderId === highlightedOrderId}
                 />
             ))}
         </div>

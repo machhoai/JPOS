@@ -8,6 +8,7 @@ import type { PosOrder } from "@/lib/types/order";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { getOrderCustomerDisplay } from "@/lib/utils/orderCustomer";
 import { getOrderDisplayStatus } from "@/lib/utils/orderLifecycle";
+import { isPayOSOrder } from "@/features/payments/helpers/payOSReconciliation";
 import ReceiptPrintButton from "@/features/receipt/components/ReceiptPrintButton";
 import TicketPrintButton from "@/features/ticket/components/TicketPrintButton";
 import LuckyDrawPrintButton from "@/features/lucky-draw/components/LuckyDrawPrintButton";
@@ -82,6 +83,13 @@ export default function OrderDetailModal({
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                    {isPayOSOrder(order) && order.paymentVerificationStatus === "VERIFIED" && (
+                        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-emerald-900">
+                            <p className="text-sm font-bold">PayOS đã xác nhận thanh toán</p>
+                            {order.payosReconciliation?.verifiedAt && <p className="mt-1 text-xs">Đối soát lúc {formatDateTime(order.payosReconciliation.verifiedAt)}</p>}
+                            {order.paymentDetails?.manualConfirmation && <p className="mt-1 text-xs">Đơn đã được {order.paymentDetails.manualConfirmation.confirmedByName} hoàn thành thủ công lúc {formatDateTime(order.paymentDetails.manualConfirmation.confirmedAt)}.</p>}
+                        </div>
+                    )}
                     {isPaymentUnverified && (
                         <div className="rounded-xl border border-amber-500/60 bg-amber-500/15 p-3 text-amber-300">
                             <p className="text-sm font-extrabold">Chưa được xác nhận thanh toán</p>

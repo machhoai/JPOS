@@ -44,6 +44,12 @@ import {
   isFixedTransferActive,
 } from "./fixedTransferFunctions";
 import { isPayOSUnavailableError } from "./payosErrors";
+import {
+  confirmedPayOSAttempt,
+  isPayOSOrder,
+  needsPayOSReconciliation,
+  payOSReconciliationDueAt,
+} from "./payosReconciliationPolicy";
 
 const PAYMENT_LINK_LIFETIME_SECONDS = 15 * 60;
 const STALE_CREATION_MS = 2 * 60 * 1000;
@@ -598,7 +604,7 @@ export async function markPayOSPaymentPaid(
     }
 
     const paidAt = new Date().toISOString();
-    const paidAttempt: PayOSPaymentAttempt = {
+    const paidAttempt: PayOSPaymentAttempt = attempt.status === "PAID" ? attempt : {
       ...attempt,
       status: "PAID",
       paidAt,
@@ -616,10 +622,24 @@ export async function markPayOSPaymentPaid(
       lastCheckedAt: paidAt,
       lastError: null,
     };
+    const verificationUpdate = (isPayOSOrder(order) || decision !== "ALREADY_COMPLETED") ? {
+      paymentVerificationStatus: "VERIFIED" as const,
+      ...(order.payosReconciliation || details.manualConfirmation ? {
+        payosReconciliation: {
+          ...order.payosReconciliation,
+          dueAt: order.payosReconciliation?.dueAt ?? payOSReconciliationDueAt(order) ?? paidAt,
+          nextCheckAt: null,
+          lastError: null,
+          verifiedAt: paidAttempt.paidAt ?? paidAt,
+          confirmationSource: paidAttempt.confirmationSource ?? payment.confirmationSource ?? "API_CHECK",
+          orderCode,
+        },
+      } : {}),
+    } : {};
     if (decision === "ALREADY_COMPLETED") {
-      if (attempt.status !== "PAID") {
-        transaction.update(docRef, { paymentDetails, updatedAt: paidAt });
-        writePaymentStatus(transaction, { ...order, paymentDetails, updatedAt: paidAt });
+      if (attempt.status !== "PAID" || (isPayOSOrder(order) && order.paymentVerificationStatus === "UNVERIFIED")) {
+        transaction.update(docRef, { paymentDetails, ...verificationUpdate, updatedAt: paidAt });
+        writePaymentStatus(transaction, { ...order, paymentDetails, ...verificationUpdate, updatedAt: paidAt });
       }
       return "ALREADY_COMPLETED";
     }
@@ -629,10 +649,11 @@ export async function markPayOSPaymentPaid(
       paymentMethodId: "QR_CODE",
       paymentMethodName: "Chuyển khoản",
       paymentDetails,
+      ...verificationUpdate,
       paidAt,
       updatedAt: paidAt,
     });
-    writePaymentStatus(transaction, { ...order, status: "LOCAL_PAID", paymentDetails, paidAt, updatedAt: paidAt });
+    writePaymentStatus(transaction, { ...order, status: "LOCAL_PAID", paymentDetails, ...verificationUpdate, paidAt, updatedAt: paidAt });
     return "PAID";
   });
 }
@@ -643,6 +664,9 @@ async function syncPayOSOrder(
   requestOptions?: { timeout: number; maxRetries: number },
   requireFresh = false,
 ): Promise<PosOrder> {
+  if (needsPayOSReconciliation(order)) {
+    return reconcileCompletedPayOSOrder(docRef);
+  }
   const attempt = getCurrentAttempt(order);
   if (!attempt || !isPayOSActive(attempt.status) || attempt.status === "CREATING") {
     return order;
@@ -799,6 +823,77 @@ export async function createPayOSPaymentForUser(
   return buildPaymentResult(createdOrder);
 }
 
+/** Reconcile completed orders without repeating checkout, vouchers or invoice sync. */
+export async function reconcileCompletedPayOSOrder(docRef: DocumentReference, maxDurationMs = 35_000): Promise<PosOrder> {
+  let order = (await docRef.get()).data() as PosOrder;
+  if (!needsPayOSReconciliation(order)) return order;
+  const storedPayment = confirmedPayOSAttempt(order);
+  if (storedPayment) {
+    await markPayOSPaymentPaid(docRef, storedPayment.orderCode, {
+      code: "00", orderCode: storedPayment.orderCode,
+      amount: storedPayment.paidAmount!, currency: storedPayment.currency ?? "VND",
+      paymentLinkId: storedPayment.paymentLinkId!,
+      confirmationSource: storedPayment.confirmationSource,
+      reference: storedPayment.reference,
+      transactionDateTime: storedPayment.transactionDateTime,
+    });
+    return (await docRef.get()).data() as PosOrder;
+  }
+
+  const errors: string[] = [];
+  const attempts = [...order.paymentDetails!.attempts].reverse();
+  const deadline = Date.now() + maxDurationMs;
+  for (const attempt of attempts) {
+    if (!attempt.paymentLinkId) continue;
+    if (Date.now() >= deadline) {
+      errors.push("Chưa kiểm tra hết các mã PayOS. Vui lòng kiểm tra lại.");
+      break;
+    }
+    try {
+      order = await withPayOSCheckLease(docRef, attempt.orderCode, true, async () => {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) throw new Error("Hết thời gian kiểm tra PayOS. Vui lòng kiểm tra lại.");
+        const info = await getPayOS().paymentRequests.get(attempt.orderCode, { timeout: Math.min(3000, remainingMs), maxRetries: 0 });
+        if (info.status === "PAID") {
+          const result = await markPayOSPaymentPaid(docRef, attempt.orderCode, {
+            code: "00", orderCode: attempt.orderCode, amount: info.amountPaid,
+            currency: "VND", paymentLinkId: info.id, confirmationSource: "API_CHECK",
+            reference: info.transactions[0]?.reference,
+            transactionDateTime: info.transactions[0]?.transactionDateTime,
+          });
+          if (result === "REJECTED") {
+            throw new Error("PayOS báo đã thanh toán nhưng dữ liệu không khớp đơn hàng.");
+          }
+        }
+        return (await docRef.get()).data() as PosOrder;
+      }, true, Math.max(250, Math.min(9000, deadline - Date.now() - 3000)));
+      if (!needsPayOSReconciliation(order)) return order;
+    } catch (error) {
+      logger.warn("[PayOS reconciliation] Không thể đối soát", { localOrderId: order.localOrderId, orderCode: attempt.orderCode, error });
+      errors.push(error instanceof Error ? error.message : "Không thể kiểm tra PayOS.");
+    }
+  }
+  return db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(docRef);
+    const current = snapshot.data() as PosOrder;
+    if (!needsPayOSReconciliation(current)) return current;
+    const now = new Date().toISOString();
+    const dueAt = current.payosReconciliation?.dueAt ?? payOSReconciliationDueAt(current) ?? now;
+    const age = Date.now() - Date.parse(dueAt);
+    const retryIntervalMs = age > 24 * 60 * 60_000 ? 30 * 60_000 : age > 60 * 60_000 ? 5 * 60_000 : 60_000;
+    const payosReconciliation = {
+      ...current.payosReconciliation, dueAt,
+      nextCheckAt: new Date(Math.max(Date.now() + retryIntervalMs, Date.parse(dueAt))).toISOString(),
+      lastCheckedAt: now, lastError: errors.join(" ") || null,
+      ...(Date.parse(dueAt) <= Date.now() ? { alertedAt: current.payosReconciliation?.alertedAt ?? now } : {}),
+    };
+    const next = { ...current, payosReconciliation, updatedAt: now };
+    transaction.update(docRef, { payosReconciliation, updatedAt: now });
+    writePaymentStatus(transaction, next);
+    return next;
+  });
+}
+
 export async function getPayOSPaymentStatusForUser(
   userId: string,
   data: unknown,
@@ -944,6 +1039,10 @@ export async function confirmPayOSPaymentManuallyForUser(
       paymentMethodId: "QR_CODE",
       paymentMethodName: "Chuyển khoản (xác nhận thủ công)",
       paymentVerificationStatus: "UNVERIFIED",
+      payosReconciliation: {
+        dueAt: new Date(Date.parse(confirmedAt) + PAYOS_DISPLAY_WINDOW_MS).toISOString(),
+        nextCheckAt: new Date(Date.parse(confirmedAt) + PAYOS_DISPLAY_WINDOW_MS).toISOString(),
+      },
       paymentDetails,
       paidAt: confirmedAt,
       updatedAt: confirmedAt,
@@ -954,6 +1053,7 @@ export async function confirmPayOSPaymentManuallyForUser(
       paymentMethodId: nextOrder.paymentMethodId,
       paymentMethodName: nextOrder.paymentMethodName,
       paymentVerificationStatus: nextOrder.paymentVerificationStatus,
+      payosReconciliation: nextOrder.payosReconciliation,
       paymentDetails,
       paidAt: confirmedAt,
       updatedAt: confirmedAt,

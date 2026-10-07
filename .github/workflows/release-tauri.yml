@@ -81,10 +81,11 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Tối ưu đường tạo mã thanh toán PayOS và nhận trạng thái thành công qua Firestore realtime.
-            - Kiểm tra PayOS theo chu kỳ 5 giây khi máy được bật tối ưu; tự chuyển sang polling dự phòng nếu realtime gặp lỗi hoặc mất mạng.
-            - Đồng bộ lease/backoff giữa các instance để hạn chế gọi PayOS trùng; xử lý an toàn khi hủy hoặc tạo lại mã sát thời điểm nhận tiền.
-            - Giữ kiểm tra quyền, thiết bị, số tiền và chữ ký webhook; không thay đổi ý nghĩa thời điểm thanh toán của đơn.
+            - Tự đối soát đơn PayOS đã hoàn thành thủ công khi webhook hoặc API xác nhận đã nhận đủ tiền; giữ lịch sử nhân viên xác nhận và thời điểm hoàn thành đơn.
+            - Cảnh báo sau 5 phút bằng toast có nút “Xem đơn”; mở đúng ngày, cuộn đến và tô sáng đơn cần kiểm tra.
+            - Badge trên sidebar đếm đơn PayOS còn chờ xác nhận, kể cả thông báo đã xem; tự cập nhật khi PayOS xác nhận.
+            - Kết ca và bản in tách số tiền PayOS đã xác nhận/chờ đối soát, kiểm tra lại trước khi in và cảnh báo các đơn chưa được xác nhận.
+            - Kiểm tra nền với lease/backoff, xác thực chữ ký và số tiền; chỉ cảnh báo đơn PayOS, loại trừ tiền mặt và QR tài khoản cố định.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: true

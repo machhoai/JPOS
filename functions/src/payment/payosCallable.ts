@@ -21,6 +21,7 @@ import {
   saveFixedTransferSettingsForUser,
 } from "./fixedTransferFunctions";
 import { assertActivePosDevice } from "../services/posDeviceAccessService";
+import { handlePayOSReconciliation } from "./payosReconciliation";
 
 export const payosPayment = onCall(
   {
@@ -57,6 +58,9 @@ export const payosPayment = onCall(
     }
     const result = await (async () => {
       try {
+        if (["reconcile-list", "reconcile-check", "reconcile-ack", "reconcile-closeout"].includes(action)) {
+          return await handlePayOSReconciliation(userId, device, action, payload ?? {});
+        }
         if (action === "watch") {
           return await createPaymentWatch(userId, device, payload?.localOrderId);
         }

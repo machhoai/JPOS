@@ -44,6 +44,23 @@ export function showWarning(title: string, description?: string) {
     });
 }
 
+export function showWarningAction(
+    title: string,
+    description: string,
+    action: { label: string; onClick: () => void },
+    options: { id?: string; onDismiss?: () => void } = {},
+) {
+    return gooeyToast.warning(title, {
+        description, action, preset: DEFAULT_PRESET,
+        timing: { displayDuration: 15000 },
+        id: options.id, onDismiss: options.onDismiss,
+    });
+}
+
+export function dismissToast(id: string | number) {
+    gooeyToast.dismiss(id);
+}
+
 // ── Promise toast (cho mọi thao tác bất đồng bộ) ───────────────────────
 
 interface PromiseToastOptions {

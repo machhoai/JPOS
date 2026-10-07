@@ -17,6 +17,7 @@ interface OrderCardRowProps {
     order: PosOrder;
     onSelectOrder: (order: PosOrder) => void;
     onRetrySync?: (order: PosOrder, e: React.MouseEvent) => void;
+    isHighlighted?: boolean;
 }
 
 const STATUS_CONFIG: Record<
@@ -105,7 +106,7 @@ function formatDate(iso: string) {
     return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-export default function OrderCardRow({ order, onSelectOrder, onRetrySync }: OrderCardRowProps) {
+export default function OrderCardRow({ order, onSelectOrder, onRetrySync, isHighlighted = false }: OrderCardRowProps) {
     const displayStatus = getOrderDisplayStatus(order);
     const status = STATUS_CONFIG[displayStatus] || STATUS_CONFIG.DRAFT;
     const isPaymentUnverified = order.paymentVerificationStatus === "UNVERIFIED";
@@ -123,8 +124,11 @@ export default function OrderCardRow({ order, onSelectOrder, onRetrySync }: Orde
 
     return (
         <div
+            id={`order-${order.localOrderId}`}
+            data-order-id={order.localOrderId}
+            tabIndex={-1}
             onClick={() => onSelectOrder(order)}
-            className={`group relative flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 md:px-5 md:py-2 border border-l-4 rounded-2xl transition-all duration-200 hover:shadow-md hover:translate-y-[-1px] cursor-pointer ${
+            className={`group relative scroll-mt-4 flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 md:px-5 md:py-2 border border-l-4 rounded-2xl transition-all duration-200 hover:shadow-md hover:translate-y-[-1px] cursor-pointer ${isHighlighted ? "ring-2 ring-orange-500 ring-offset-2" : ""} ${
                 isPaymentUnverified
                     ? "bg-amber-500/15 border-amber-500/60 border-l-amber-500 hover:border-amber-500"
                     : `bg-[var(--color-surface)] border-[var(--color-border)] ${status.borderLeftClass} hover:border-[var(--color-border-subtle)]`

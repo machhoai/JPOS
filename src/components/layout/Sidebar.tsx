@@ -7,6 +7,7 @@ import { IoAlbums, IoDesktop, IoDocument, IoHome, IoPeople, IoSettings, IoTicket
 import { useUpdater } from "@/features/updater/components/UpdateProvider";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import { ORDER_HISTORY_READ_PERMISSION } from "@/lib/auth/permissions";
+import { usePayOSReconciliationStore } from "@/features/payments/store/usePayOSReconciliationStore";
 
 interface SidebarProps {
     onLogout: () => void;
@@ -53,7 +54,11 @@ const NAV_ITEMS = [
 export default function Sidebar({ onLogout }: SidebarProps) {
     const pathname = usePathname();
     const updater = useUpdater();
-    const { effectiveWarehouseId, hasPermission } = useAuth();
+    const { user, effectiveWarehouseId, hasPermission } = useAuth();
+    const paymentScope = user && effectiveWarehouseId ? `${user.uid}:${effectiveWarehouseId}` : null;
+    const pendingPayOSCount = usePayOSReconciliationStore((state) =>
+        paymentScope && state.scopeKey === paymentScope ? state.pendingCount : 0,
+    );
     const hasAvailableUpdate = updater.availableVersion !== null;
     const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
     const logoutButtonRef = useRef<HTMLButtonElement>(null);
@@ -128,6 +133,10 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                             : item.href === "/members"
                                 ? pathname === "/members"
                                 : pathname.startsWith(item.href);
+                        const badgeCount = item.href === "/orders" ? pendingPayOSCount : 0;
+                        const label = badgeCount > 0
+                            ? `${item.label} · ${badgeCount} đơn PayOS chờ xác nhận`
+                            : item.label;
 
                         return (
                             <Link
@@ -137,13 +146,18 @@ export default function Sidebar({ onLogout }: SidebarProps) {
                                     ? "text-[var(--color-accent)] bg-orange-50"
                                     : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]"
                                     }`}
-                                aria-label={item.label}
-                                title={item.label}
+                                aria-label={label}
+                                title={label}
                             >
                                 {isActive && (
                                     <span className="absolute -left-[9px] w-[3px] h-9 rounded-r-full bg-[var(--color-accent)]" />
                                 )}
                                 {item.icon}
+                                {badgeCount > 0 && (
+                                    <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white">
+                                        {badgeCount > 99 ? "99+" : badgeCount}
+                                    </span>
+                                )}
                             </Link>
                         );
                     })}

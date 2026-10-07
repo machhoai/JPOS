@@ -221,8 +221,21 @@ export interface PosOrder {
   paymentDetails?: PayOSPaymentDetails;
   fixedTransferDetails?: FixedTransferDetails;
   paymentVerificationStatus?: PaymentVerificationStatus;
+  payosReconciliation?: PayOSReconciliation;
   sync: SyncMetadata;
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
+}
+
+export interface PayOSReconciliation {
+  dueAt: string;
+  nextCheckAt: string | null;
+  lastCheckedAt?: string;
+  lastError?: string | null;
+  alertedAt?: string;
+  verifiedAt?: string;
+  confirmationSource?: "WEBHOOK" | "API_CHECK";
+  orderCode?: number;
+  acknowledgedBy?: string[];
 }

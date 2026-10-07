@@ -251,8 +251,9 @@ export interface PosOrder {
   /** QR tài khoản cố định được dùng khi PayOS không thể cung cấp mã. */
   fixedTransferDetails?: FixedTransferDetails;
 
-  /** UNVERIFIED means a cashier completed a fixed-account transfer manually. */
+  /** UNVERIFIED means manual checkout without provider confirmation. */
   paymentVerificationStatus?: PaymentVerificationStatus;
+  payosReconciliation?: PayOSReconciliation;
 
   /** Tên khách hàng (nếu là thành viên) */
   customerName?: string;
@@ -277,6 +278,18 @@ export interface PosOrder {
 
   /** ISO 8601 timestamp when local payment completed */
   paidAt?: string;
+}
+
+export interface PayOSReconciliation {
+  dueAt: string;
+  nextCheckAt: string | null;
+  lastCheckedAt?: string;
+  lastError?: string | null;
+  alertedAt?: string;
+  verifiedAt?: string;
+  confirmationSource?: "WEBHOOK" | "API_CHECK";
+  orderCode?: number;
+  acknowledgedBy?: string[];
 }
 
 /**

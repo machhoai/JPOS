@@ -8,6 +8,7 @@ import ToastProvider from "@/components/providers/ToastProvider";
 import ResilienceProvider from "@/components/resilience/ResilienceProvider";
 import DeviceActivationGate from "@/components/device/DeviceActivationGate";
 import UpdateProvider from "@/features/updater/components/UpdateProvider";
+import PayOSReconciliationMonitor from "@/features/payments/components/PayOSReconciliationMonitor";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -30,7 +31,7 @@ export default function RootLayout({
         <UpdateProvider>
           <ResilienceProvider>
             <DeviceActivationGate>
-              <AuthProvider>{children}</AuthProvider>
+              <AuthProvider>{children}<PayOSReconciliationMonitor /></AuthProvider>
             </DeviceActivationGate>
           </ResilienceProvider>
         </UpdateProvider>

@@ -4,6 +4,7 @@ import { HttpsError } from "firebase-functions/v2/https";
 import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import type { PosOrder } from "../types/order";
+import { needsPayOSReconciliation } from "./payosReconciliationPolicy";
 
 const CHECK_INTERVAL_MS = 5000;
 const LEASE_MS = 8000;
@@ -37,6 +38,8 @@ export async function withPayOSCheckLease(
   orderCode: number,
   requireFresh: boolean,
   check: () => Promise<PosOrder>,
+  allowReconciliation = false,
+  maxWaitMs = LEASE_MS + 1000,
 ): Promise<PosOrder> {
   const ref = db.collection(POS_COLLECTIONS.paymentChecks).doc(String(orderCode));
   const leaseId = randomUUID();
@@ -57,14 +60,17 @@ export async function withPayOSCheckLease(
     if (claim === "CLAIMED") break;
     if (claim === "BACKOFF" && requireFresh) throw new HttpsError("resource-exhausted", "PayOS đang giới hạn truy vấn. Vui lòng thử lại sau.");
     if (claim !== "BUSY") return (await orderRef.get()).data() as PosOrder;
-    if (Date.now() - startedAt >= LEASE_MS + 1000) throw new HttpsError("unavailable", "Đang kiểm tra trạng thái PayOS. Vui lòng thử lại.");
+    if (Date.now() - startedAt >= maxWaitMs) throw new HttpsError("unavailable", "Đang kiểm tra trạng thái PayOS. Vui lòng thử lại.");
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   let error: unknown;
   try {
     // A webhook may have completed or replaced this attempt while claiming.
     const current = (await orderRef.get()).data() as PosOrder;
-    if (current.status !== "DRAFT" || current.paymentDetails?.currentOrderCode !== orderCode) return current;
+    if (allowReconciliation) {
+      if (!needsPayOSReconciliation(current) ||
+          !current.paymentDetails?.attempts.some((attempt) => attempt.orderCode === orderCode)) return current;
+    } else if (current.status !== "DRAFT" || current.paymentDetails?.currentOrderCode !== orderCode) return current;
     return await check();
   } catch (caught: unknown) {
     error = caught;

@@ -22,6 +22,16 @@ export interface CloseoutReport {
   products: CloseoutProductSummary[];
   payments: CloseoutPaymentSummary[];
   operatorNames: string[];
+  payosVerifiedAmount: number;
+  payosUnverifiedAmount: number;
+  payosPendingOrders: Array<{
+    localOrderId: string;
+    totalAmount: number;
+    operatorName: string;
+    completedAt: string | null;
+    lastCheckedAt: string | null;
+    lastError: string | null;
+  }>;
 }
 
 export interface CloseoutReportMeta {
