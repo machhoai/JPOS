@@ -9,6 +9,7 @@ import type { ActivePosDevice } from "../services/posDeviceAccessService";
 import { payosApiKeySecret, payosChecksumKeySecret, payosClientIdSecret } from "../services/payosService";
 import type { PosOrder } from "../types/order";
 import { listCloseoutOrdersForUser } from "../order/functions";
+import { getCurrentVietnamDayRange } from "../order/orderHistoryRange";
 import { reconcileCompletedPayOSOrder } from "./payosFunctions";
 import { confirmedPayOSAttempt, isPayOSOrder, needsPayOSReconciliation, payOSReconciliationDueAt } from "./payosReconciliationPolicy";
 
@@ -102,10 +103,13 @@ export async function handlePayOSReconciliation(
     });
     return { acknowledged: true };
   }
+  const today = getCurrentVietnamDayRange();
   const query = db.collection(POS_COLLECTIONS.orders)
     .where("warehouseId", "==", device.warehouseId)
     .where("paymentVerificationStatus", "==", "UNVERIFIED")
-    .orderBy("__name__").limit(100);
+    .where("createdAt", ">=", today.startAt)
+    .where("createdAt", "<", today.endAt)
+    .orderBy("createdAt").limit(100);
   const pending: Array<{ ref: DocumentReference; order: PosOrder }> = [];
   let page = await query.get();
   const scanDeadline = Date.now() + 35_000;

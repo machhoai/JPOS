@@ -16,7 +16,7 @@ async function fixture(overrides = {}) {
     localOrderId, warehouseId: "reconcile-warehouse", createdBy: "cashier", operatorName: "Nhân viên",
     paymentMethod: "QR_CODE", paymentMethodId: "QR_CODE", paymentMethodName: "Chuyển khoản (xác nhận thủ công)",
     status: "SYNC_SUCCESS", paymentStatus: "PAID", syncStatus: "SYNC_SUCCESS", totalAmount: 2000, paidAt,
-    updatedAt: paidAt, paymentVerificationStatus: "UNVERIFIED", items: [],
+    createdAt: new Date().toISOString(), updatedAt: paidAt, paymentVerificationStatus: "UNVERIFIED", items: [],
     paymentDetails: { provider: "payos", currentOrderCode: orderCode, attempts: [
       { orderCode, status: "PENDING", amount: 2000, paymentLinkId: `link-${orderCode}`, currency: "VND" },
     ], manualConfirmation: { confirmedAt: paidAt, confirmedByUid: "cashier", confirmedByName: "Nhân viên", reason: "PAYOS_NOT_CONFIRMED", previousPaymentStatus: "PENDING", note: "Đã kiểm tra" } },
@@ -35,6 +35,20 @@ test("completed PayOS orders reconcile safely", async (t) => {
   const device = { warehouseId: "reconcile-warehouse" };
   auth.getPosAuthSession = async () => ({ warehouses: [{ id: device.warehouseId }], permissions: { global: { "pos.orders.read": true } } });
   try {
+    await t.test("badge list contains only orders created today in Vietnam, including viewed notifications", async () => {
+      const { getCurrentVietnamDayRange } = require("../lib/order/orderHistoryRange");
+      const today = getCurrentVietnamDayRange();
+      const recent = await fixture({ createdAt: today.startAt });
+      const old = await fixture({ createdAt: new Date(Date.parse(today.startAt) - 1).toISOString() });
+      const tomorrow = await fixture({ createdAt: today.endAt });
+      await recent.ref.update({ "payosReconciliation.acknowledgedBy": ["cashier"] });
+      provider.getPayOS = () => ({ paymentRequests: { get: async () => ({ status: "PENDING" }) } });
+      const list = await handlePayOSReconciliation("cashier", device, "reconcile-list", {});
+      assert.ok(list.orders.some((order) => order.localOrderId === recent.value.localOrderId && order.acknowledged));
+      assert.ok(!list.orders.some((order) => order.localOrderId === old.value.localOrderId));
+      assert.ok(!list.orders.some((order) => order.localOrderId === tomorrow.value.localOrderId));
+      assert.equal((await old.ref.get()).data().paymentVerificationStatus, "UNVERIFIED");
+    });
     await t.test("late webhook verifies manual order while preserving completion and audit; replay is a no-op", async () => {
       const o = await fixture();
       assert.equal(await markPayOSPaymentPaid(o.ref, o.attempt.orderCode, payment(o.attempt)), "ALREADY_COMPLETED");

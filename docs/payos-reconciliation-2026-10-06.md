@@ -27,8 +27,10 @@ QR cố định có thể giữ phiên PayOS cũ nên phải loại trừ bằng
 - Cảnh báo dùng toast hiện có của hệ thống, mỗi đơn có action “Xem đơn”. Không
   có nút hoặc danh sách nổi riêng. Action mở lịch sử theo ngày tạo đơn tại Việt
   Nam, bỏ bộ lọc cũ, chờ tải dữ liệu rồi cuộn đến và tô sáng đúng đơn.
-- Mục Đơn hàng trên sidebar có badge đỏ đếm toàn bộ đơn PayOS còn chờ xác nhận
-  trong cửa hàng đang chọn, kể cả chưa đủ 5 phút và thông báo đã xem. Badge dùng
+- Mục Đơn hàng trên sidebar có badge đỏ đếm đơn PayOS được tạo hôm nay theo giờ
+  Việt Nam còn chờ xác nhận trong cửa hàng đang chọn, kể cả chưa đủ 5 phút và
+  thông báo đã xem. Toast dùng cùng phạm vi hôm nay; đơn cũ vẫn được đối soát
+  nền và xuất hiện trong báo cáo kết ca đúng kỳ. Badge dùng
   chung kết quả kiểm tra của monitor, không gọi thêm API. Ẩn khi bằng 0, hiển thị
   `99+` nếu lớn hơn 99; tooltip giữ số lượng đầy đủ. Không dùng số của cửa hàng
   hoặc nhân viên trước sau khi đổi phiên.
@@ -57,7 +59,7 @@ Firestore và không nhận API secret. Màn hình khách không chạy monitor.
 ## Triển khai
 
 1. Build Functions và kiểm thử trước khi deploy.
-2. Hợp nhất index `pos_orders(warehouseId ASC, paymentVerificationStatus ASC)`
+2. Hợp nhất index `pos_orders(warehouseId ASC, paymentVerificationStatus ASC, createdAt ASC)`
    vào cấu hình index của database dùng chung, hoặc tạo riêng index này theo
    quy trình vận hành của project. Không deploy riêng rules/index toàn bộ POS
    thay cho cấu hình dùng chung; không xóa index của `bduck-system`.
