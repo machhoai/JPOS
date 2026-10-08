@@ -103,6 +103,7 @@ export interface PosDeviceHeartbeatResult {
 }
 
 export interface PosDeviceConfigVersions {
+  cash_drawer_settings?: number | null;
   receipt_settings: number | null;
   ticket_settings: number | null;
   payment_settings: number | null;
@@ -110,8 +111,9 @@ export interface PosDeviceConfigVersions {
 }
 
 export interface PosDeviceConfigSyncResult {
+  cash_drawer_settings?: import("@/features/printer/helpers/remoteCashDrawerSettings").RemoteCashDrawerSettings | null;
   versions: PosDeviceConfigVersions;
-  changed: Record<keyof PosDeviceConfigVersions, boolean>;
+  changed: Record<Exclude<keyof PosDeviceConfigVersions, "cash_drawer_settings">, boolean> & { cash_drawer_settings?: boolean };
   receipt_settings: RemotePosReceiptSettings | null;
   ticket_settings: RemotePosTicketSettings | null;
   payment_settings: import("@/lib/types/paymentSettings").FixedTransferSettings | null;

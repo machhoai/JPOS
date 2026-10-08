@@ -6,6 +6,8 @@ import { mapRemoteReceiptSettings } from "@/features/receipt/helpers/remoteRecei
 import { useReceiptSettingsStore } from "@/features/receipt/store/useReceiptSettingsStore";
 import { mapRemoteTicketSettings } from "@/features/ticket/helpers/remoteTicketSettings";
 import { useTicketSettingsStore } from "@/features/ticket/store/useTicketSettingsStore";
+import { usePrinterSettingsStore } from "@/features/printer/store/usePrinterSettingsStore";
+import { getEffectiveCashDrawerConfig } from "@/features/printer/helpers/remoteCashDrawerSettings";
 import { applyCustomerDisplayAdvertisingView } from "@/lib/services/customerDisplayAdvertisingSyncService";
 import {
   listenCustomerDisplayAdvertisingReady,
@@ -73,6 +75,11 @@ export function useRemoteDeviceSettingsSync({
   }, []);
 
   const applyConfig = useCallback(async (result: PosDeviceConfigSyncResult) => {
+    if (result.changed.cash_drawer_settings && pollingCredential) {
+      const state = usePrinterSettingsStore.getState();
+      state.bindCashDrawerDevice(pollingCredential.device_id, pollingCredential.warehouse_id);
+      state.applyRemoteCashDrawerSettings(result.cash_drawer_settings ?? null, pollingCredential.device_id, pollingCredential.warehouse_id);
+    }
     if (result.changed.receipt_settings) {
       if (result.receipt_settings) {
         applyReceipt(
@@ -143,6 +150,7 @@ export function useRemoteDeviceSettingsSync({
           pollingCredential.warehouse_id,
         );
         const result = await syncRemoteDeviceConfig(pollingCredential, {
+          cash_drawer_settings: getEffectiveCashDrawerConfig(usePrinterSettingsStore.getState()).version,
           receipt_settings: receiptState.remoteVersion || null,
           ticket_settings: ticketState.remoteVersion || null,
           payment_settings: payment?.version ?? null,

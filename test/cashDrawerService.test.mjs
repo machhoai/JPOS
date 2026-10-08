@@ -3,6 +3,7 @@ import test from "node:test";
 import fs from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import { getEffectiveCashDrawerConfig } from "../src/features/printer/helpers/remoteCashDrawerSettings.ts";
 
 function loadService() {
   const settings = { cashDrawerEnabled: true, selectedPrinterName: "XP-80C", cashDrawerPin: 2, cashDrawerProtocol: "ESCPOS" };
@@ -11,6 +12,7 @@ function loadService() {
   let failure;
   let desktop = true;
   const dependencies = {
+    "@/features/printer/helpers/remoteCashDrawerSettings": { getEffectiveCashDrawerConfig },
     "@/features/printer/store/usePrinterSettingsStore": { usePrinterSettingsStore: { getState: () => settings } },
     "@/lib/utils/toast": { showWarning: (...args) => warnings.push(args) },
     "@tauri-apps/api/core": {
@@ -53,6 +55,19 @@ test("TSPL selection is used for both manual and automatic cash dispatch", async
   assert.equal(calls.length, 2);
   assert.equal(calls[0][1].protocol, "TSPL");
   assert.equal(calls[1][1].protocol, "TSPL");
+});
+
+test("central device settings override local protocol and auto-open switch", async () => {
+  const { service, settings, calls } = loadService();
+  settings.cashDrawerDeviceScope = { deviceId: "d1", warehouseId: "warehouse-a" };
+  settings.remoteCashDrawerSettings = { device_id: "d1", warehouse_id: "warehouse-a", version: 2, auto_open_enabled: false, protocol: "TSPL", pin: 2, is_deleted: false };
+  await service.openCashDrawerAfterPayment("JPOS-1", "warehouse-a", "CASH");
+  assert.equal(calls.length, 0);
+  settings.remoteCashDrawerSettings.auto_open_enabled = true;
+  await service.openCashDrawerAfterPayment("JPOS-2", "warehouse-a", "CASH");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][1].protocol, "TSPL");
+  assert.equal(calls[0][1].pin, 2);
 });
 
 test("disabled drawer and all non-cash payments do not dispatch", async () => {

@@ -3,17 +3,20 @@ import test from "node:test";
 import fs from "node:fs";
 import vm from "node:vm";
 import ts from "typescript";
+import { getEffectiveCashDrawerConfig } from "../src/features/printer/helpers/remoteCashDrawerSettings.ts";
 import React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 
-function renderSettings(canOpen, printers = []) {
+function renderSettings(canOpen, printers = [], remoteSettings = null) {
   const state = {
     cashDrawerEnabled: false, selectedPrinterName: "XP-80C", cashDrawerPin: 2,
     setCashDrawerEnabled() {}, setCashDrawerPin() {},
     cashDrawerProtocol: "ESCPOS", setCashDrawerProtocol() {},
+    remoteCashDrawerSettings: remoteSettings, cashDrawerDeviceScope: { deviceId: "d1", warehouseId: "w1" },
   };
   const dependencies = {
+    "@/features/printer/helpers/remoteCashDrawerSettings": { getEffectiveCashDrawerConfig },
     react: React,
     "react/jsx-runtime": jsxRuntime,
     "zustand/react/shallow": { useShallow: (selector) => selector },
@@ -53,4 +56,13 @@ test("authorized staff can test without enabling auto-open; missing printer disa
   assert.match(html, /ESC\/POS/);
   assert.match(html, /TSPL/);
   assert.match(missing, /<button[^>]*disabled=""/);
+});
+
+test("centrally managed settings are read-only while authorized manual open remains available", () => {
+  const html = renderSettings(true, [{ name: "XP-80C", isAvailable: true, status: "READY" }], {
+    id: "d1", device_id: "d1", warehouse_id: "w1", version: 2, auto_open_enabled: true, protocol: "TSPL", pin: 2, is_deleted: false,
+  });
+  assert.match(html, /Cấu hình từ JPULSE/);
+  assert.match(html, /<fieldset disabled=""/);
+  assert.doesNotMatch(html, /<button[^>]*disabled=""/);
 });

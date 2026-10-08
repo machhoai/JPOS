@@ -1,4 +1,5 @@
 import { usePrinterSettingsStore } from "@/features/printer/store/usePrinterSettingsStore";
+import { getEffectiveCashDrawerConfig } from "@/features/printer/helpers/remoteCashDrawerSettings";
 import { showWarning } from "@/lib/utils/toast";
 
 interface DrawerDispatch {
@@ -17,6 +18,7 @@ export async function openCashDrawer(
   orderId: string | null = null,
 ): Promise<DrawerDispatch> {
   const settings = usePrinterSettingsStore.getState();
+  const config = getEffectiveCashDrawerConfig(settings);
   if (!settings.selectedPrinterName) {
     throw new Error("Chưa chọn máy in trong Cài đặt → Máy in.");
   }
@@ -26,8 +28,8 @@ export async function openCashDrawer(
   }
   return invoke<DrawerDispatch>("open_cash_drawer", {
     printerName: settings.selectedPrinterName,
-    pin: settings.cashDrawerPin,
-    protocol: settings.cashDrawerProtocol,
+    pin: config.pin,
+    protocol: config.protocol,
     warehouseId,
     orderId,
   });
@@ -35,7 +37,7 @@ export async function openCashDrawer(
 
 /** Only call after a confirmed cash payment, never from receipt printing. */
 export async function openCashDrawerAfterPayment(orderId: string, warehouseId: string, paymentMethod: string): Promise<void> {
-  if (paymentMethod !== "CASH" || !usePrinterSettingsStore.getState().cashDrawerEnabled) return;
+  if (paymentMethod !== "CASH" || !getEffectiveCashDrawerConfig(usePrinterSettingsStore.getState()).enabled) return;
   try {
     await openCashDrawer(warehouseId, orderId);
   } catch (error: unknown) {
