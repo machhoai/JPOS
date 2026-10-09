@@ -17,7 +17,6 @@ import {
 import { setCheckoutTelemetryDeviceContext } from "@/lib/services/checkoutTelemetryService";
 import type { PosDeviceCredential } from "@/lib/types/deviceEnrollment";
 import { isRemoteSettingsOwnerPathname } from "@/lib/utils/remoteSettingsPolling";
-import { usePrinterSettingsStore } from "@/features/printer/store/usePrinterSettingsStore";
 export default function DeviceActivationGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const ownsRemoteSettings = isRemoteSettingsOwnerPathname(pathname);
@@ -57,7 +56,6 @@ export default function DeviceActivationGate({ children }: { children: ReactNode
           warehouseId: updatedCredential.warehouse_id,
         });
         setCredential(updatedCredential);
-        usePrinterSettingsStore.getState().bindCashDrawerDevice(updatedCredential.device_id, updatedCredential.warehouse_id);
         setBlocked(false);
         setBlockReason(null);
         setWarning("");
@@ -102,7 +100,6 @@ export default function DeviceActivationGate({ children }: { children: ReactNode
     void loadDeviceCredential()
       .then(async (stored) => {
         if (stored) {
-          usePrinterSettingsStore.getState().bindCashDrawerDevice(stored.device_id, stored.warehouse_id);
           setCheckoutTelemetryDeviceContext({
             deviceId: stored.device_id,
             warehouseId: stored.warehouse_id,

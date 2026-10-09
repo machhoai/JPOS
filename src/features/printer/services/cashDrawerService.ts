@@ -37,11 +37,16 @@ export async function openCashDrawer(
 
 /** Only call after a confirmed cash payment, never from receipt printing. */
 export async function openCashDrawerAfterPayment(orderId: string, warehouseId: string, paymentMethod: string): Promise<void> {
-  if (paymentMethod !== "CASH" || !getEffectiveCashDrawerConfig(usePrinterSettingsStore.getState()).enabled) return;
+  if (paymentMethod !== "CASH") return;
   try {
+    if (!getEffectiveCashDrawerConfig(usePrinterSettingsStore.getState()).enabled) return;
     await openCashDrawer(warehouseId, orderId);
   } catch (error: unknown) {
     console.error("[Két tiền] Không thể gửi lệnh mở sau thanh toán:", error);
-    showWarning("Thanh toán thành công nhưng chưa mở được két", describeCashDrawerError(error));
+    try {
+      showWarning("Thanh toán thành công nhưng chưa mở được két", describeCashDrawerError(error));
+    } catch (noticeError: unknown) {
+      console.error("[Két tiền] Không hiển thị được cảnh báo thiết bị:", noticeError);
+    }
   }
 }

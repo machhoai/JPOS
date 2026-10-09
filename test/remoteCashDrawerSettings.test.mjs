@@ -17,6 +17,11 @@ test("cash drawer cache never matches another device or transferred warehouse", 
   assert.equal(getEffectiveCashDrawerConfig({ ...local, cashDrawerDeviceScope: { deviceId: "d2", warehouseId: "w1" }, remoteCashDrawerSettings: remote }).managed, false);
 });
 
+test("unverified or wrong-scope remote cache never enables automatic drawer opening", () => {
+  assert.equal(getEffectiveCashDrawerConfig({ ...local, cashDrawerDeviceScope: null, remoteCashDrawerSettings: remote }).enabled, false);
+  assert.equal(getEffectiveCashDrawerConfig({ ...local, cashDrawerDeviceScope: { deviceId: "d2", warehouseId: "w1" }, remoteCashDrawerSettings: remote }).enabled, false);
+});
+
 test("invalid remote configuration and soft-deleted documents are rejected", () => {
   for (const patch of [{ protocol: "TSPL", pin: 5 }, { protocol: "RAW" }, { auto_open_enabled: "true" }, { version: 0 }, { is_deleted: true }]) {
     assert.equal(parseRemoteCashDrawerSettings({ ...remote, ...patch }, "d1", "w1"), null);

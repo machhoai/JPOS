@@ -1,41 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import fs from "node:fs";
-import vm from "node:vm";
-import ts from "typescript";
-import { getEffectiveCashDrawerConfig } from "../src/features/printer/helpers/remoteCashDrawerSettings.ts";
-
-function loadService() {
-  const settings = { cashDrawerEnabled: true, selectedPrinterName: "XP-80C", cashDrawerPin: 2, cashDrawerProtocol: "ESCPOS" };
-  const calls = [];
-  const warnings = [];
-  let failure;
-  let desktop = true;
-  const dependencies = {
-    "@/features/printer/helpers/remoteCashDrawerSettings": { getEffectiveCashDrawerConfig },
-    "@/features/printer/store/usePrinterSettingsStore": { usePrinterSettingsStore: { getState: () => settings } },
-    "@/lib/utils/toast": { showWarning: (...args) => warnings.push(args) },
-    "@tauri-apps/api/core": {
-      isTauri: () => desktop,
-      invoke: async (...args) => {
-        calls.push(args);
-        if (failure) throw failure;
-        return { printerName: settings.selectedPrinterName, alreadyAttempted: false };
-      },
-    },
-  };
-  const source = fs.readFileSync(new URL("../src/features/printer/services/cashDrawerService.ts", import.meta.url), "utf8");
-  const { outputText } = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  });
-  const exports = {};
-  vm.runInNewContext(outputText, { exports, require: (name) => {
-    assert.ok(dependencies[name], `Unexpected dependency: ${name}`);
-    return dependencies[name];
-  }, console: { error() {} }, Error });
-  return { service: exports, settings, calls, warnings,
-    fail: (error) => { failure = error; }, browser: () => { desktop = false; } };
-}
+import { loadCashDrawerService as loadService } from "./helpers/cashDrawerHarness.mjs";
 
 test("cash payment dispatches to the selected drawer printer and pin", async () => {
   const { service, settings, calls } = loadService();
@@ -87,6 +52,14 @@ test("drawer failure warns without rejecting successful payment", async () => {
   assert.equal(calls.length, 1);
   assert.equal(warnings.length, 1);
   assert.equal(warnings[0][1], "Máy in điều khiển két chưa sẵn sàng.");
+});
+
+test("corrupt drawer cache and a failed toast never reject a completed payment", async () => {
+  const { service, settings, calls, failNotice } = loadService();
+  Object.defineProperty(settings, "cashDrawerEnabled", { get() { throw new Error("cache unavailable"); } });
+  failNotice(new Error("toast unavailable"));
+  await assert.doesNotReject(service.openCashDrawerAfterPayment("JPOS-1", "warehouse-a", "CASH"));
+  assert.equal(calls.length, 0);
 });
 
 test("manual open is independent of auto-open and carries no order claim", async () => {

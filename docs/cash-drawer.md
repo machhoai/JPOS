@@ -7,10 +7,12 @@ từng cửa hàng. Người quản lý có `pos.settings.read`/`pos.settings.ma
 thể vào **Quản lý JPOS → Cấu hình → Két tiền**, chọn đúng máy JPOS và lưu cấu
 hình riêng của máy. Máy in điều khiển két vẫn chọn tại JPOS như trước.
 
-JPOS nhận thay đổi realtime và từ config API, giữ cache đúng thiết bị/cửa hàng
+JPOS nhận thay đổi bằng listener realtime riêng cho két, giữ cache đúng thiết bị/cửa hàng
 khi offline. Một khi có cấu hình tập trung, phần chỉnh két tại JPOS chỉ hiển
 thị; nút thử/mở thủ công vẫn theo quyền nhân viên. Máy chưa được cấu hình trên
 JPULSE giữ cấu hình local cũ. Chuyển cửa hàng không dùng cấu hình két cũ.
+Đồng bộ két không nằm trong callback xác minh thiết bị hoặc đồng bộ cấu hình
+thanh toán. Lỗi đọc/lưu cache két không được chặn đăng nhập, QR hoặc thanh toán.
 
 ## Cấu hình local và thử két
 

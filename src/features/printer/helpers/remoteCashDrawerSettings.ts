@@ -33,7 +33,7 @@ export function getEffectiveCashDrawerConfig(state: CashDrawerConfigState) {
   const remote = scope && state.remoteCashDrawerSettings
     ? parseRemoteCashDrawerSettings(state.remoteCashDrawerSettings, scope.deviceId, scope.warehouseId) : null;
   return {
-    enabled: remote?.auto_open_enabled ?? state.cashDrawerEnabled,
+    enabled: remote?.auto_open_enabled ?? (state.remoteCashDrawerSettings ? false : state.cashDrawerEnabled),
     protocol: remote?.protocol ?? state.cashDrawerProtocol,
     pin: remote?.pin ?? state.cashDrawerPin,
     managed: Boolean(remote), version: remote?.version ?? null,

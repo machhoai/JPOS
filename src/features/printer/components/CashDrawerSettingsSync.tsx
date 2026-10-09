@@ -23,7 +23,11 @@ export default function CashDrawerSettingsSync() {
       usePrinterSettingsStore.getState().bindCashDrawerDevice(deviceId, warehouseId);
       unsubscribe = onSnapshot(doc(db, COLLECTION, deviceId), (snapshot) => {
         if (disposed || snapshot.metadata.fromCache) return;
-        usePrinterSettingsStore.getState().applyRemoteCashDrawerSettings(snapshot.exists() ? snapshot.data() : null, deviceId, warehouseId);
+        try {
+          usePrinterSettingsStore.getState().applyRemoteCashDrawerSettings(snapshot.exists() ? snapshot.data() : null, deviceId, warehouseId);
+        } catch (error: unknown) {
+          console.error("[Két tiền] Không lưu được cache cấu hình két:", error);
+        }
       }, (error) => console.error("[Két tiền] Đồng bộ JPULSE chưa sẵn sàng, giữ cấu hình cache:", error));
     }).catch((error: unknown) => console.error("[Két tiền] Không thể đọc thông tin thiết bị:", error));
     return () => { disposed = true; unsubscribe?.(); };
