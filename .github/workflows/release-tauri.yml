@@ -81,11 +81,10 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Tự đối soát đơn PayOS đã hoàn thành thủ công khi webhook hoặc API xác nhận đã nhận đủ tiền; giữ lịch sử nhân viên xác nhận và thời điểm hoàn thành đơn.
-            - Cảnh báo sau 5 phút bằng toast có nút “Xem đơn”; mở đúng ngày, cuộn đến và tô sáng đơn cần kiểm tra.
-            - Badge trên sidebar đếm đơn PayOS còn chờ xác nhận, kể cả thông báo đã xem; tự cập nhật khi PayOS xác nhận.
-            - Kết ca và bản in tách số tiền PayOS đã xác nhận/chờ đối soát, kiểm tra lại trước khi in và cảnh báo các đơn chưa được xác nhận.
-            - Kiểm tra nền với lease/backoff, xác thực chữ ký và số tiền; chỉ cảnh báo đơn PayOS, loại trừ tiền mặt và QR tài khoản cố định.
+            - Nhận cấu hình két tiền riêng cho từng máy từ JPULSE, cập nhật realtime và giữ cache offline.
+            - Giữ hỗ trợ ESC/POS và TSPL; máy in điều khiển két vẫn là máy in đã chọn tại JPOS.
+            - Cho nhân viên có quyền mở két thử và mở thủ công; cấu hình đã quản lý tập trung được hiển thị tại JPOS.
+            - Cách ly đồng bộ và lỗi két khỏi xác minh thiết bị, thanh toán và in bill; không thay đổi logic thanh toán và không triển khai Cloud Functions trong bản phát hành này.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: true
