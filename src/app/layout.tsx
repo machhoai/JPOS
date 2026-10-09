@@ -7,6 +7,7 @@ import { AuthProvider } from "@/lib/contexts/AuthContext";
 import ToastProvider from "@/components/providers/ToastProvider";
 import ResilienceProvider from "@/components/resilience/ResilienceProvider";
 import DeviceActivationGate from "@/components/device/DeviceActivationGate";
+import CashDrawerSettingsSync from "@/features/printer/components/CashDrawerSettingsSync";
 import UpdateProvider from "@/features/updater/components/UpdateProvider";
 import PayOSReconciliationMonitor from "@/features/payments/components/PayOSReconciliationMonitor";
 
@@ -31,7 +32,7 @@ export default function RootLayout({
         <UpdateProvider>
           <ResilienceProvider>
             <DeviceActivationGate>
-              <AuthProvider>{children}<PayOSReconciliationMonitor /></AuthProvider>
+              <AuthProvider>{children}<PayOSReconciliationMonitor /><CashDrawerSettingsSync /></AuthProvider>
             </DeviceActivationGate>
           </ResilienceProvider>
         </UpdateProvider>

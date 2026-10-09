@@ -1,5 +1,21 @@
 # Két tiền qua máy in
 
+## Cấu hình tập trung trên JPULSE
+
+JPULSE có quyền `pos.cash_drawer.open` trong nhóm POS để cấp cho nhân viên tại
+từng cửa hàng. Người quản lý có `pos.settings.read`/`pos.settings.manage` có
+thể vào **Quản lý JPOS → Cấu hình → Két tiền**, chọn đúng máy JPOS và lưu cấu
+hình riêng của máy. Máy in điều khiển két vẫn chọn tại JPOS như trước.
+
+JPOS nhận thay đổi bằng listener realtime riêng cho két, giữ cache đúng thiết bị/cửa hàng
+khi offline. Một khi có cấu hình tập trung, phần chỉnh két tại JPOS chỉ hiển
+thị; nút thử/mở thủ công vẫn theo quyền nhân viên. Máy chưa được cấu hình trên
+JPULSE giữ cấu hình local cũ. Chuyển cửa hàng không dùng cấu hình két cũ.
+Đồng bộ két không nằm trong callback xác minh thiết bị hoặc đồng bộ cấu hình
+thanh toán. Lỗi đọc/lưu cache két không được chặn đăng nhập, QR hoặc thanh toán.
+
+## Cấu hình local và thử két
+
 Trong **Cài đặt → Máy in**, chọn đúng máy in đang nối dây két ở danh sách
 máy in phía trên. Két luôn dùng máy in đã chọn cho bill và vé; đổi máy in sẽ
 đổi máy điều khiển két. Trong phần **Két tiền**, chọn chân 2 (mặc định) hoặc 5
