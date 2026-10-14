@@ -1,5 +1,9 @@
 "use client";
 
+import DateInput from "@/components/ui/DateInput";
+
+import { formatDate, formatDateTime } from "@/lib/utils/dateFormat";
+
 import {
     useCallback,
     useEffect,
@@ -85,17 +89,6 @@ function buildReportRange(
         throw new Error("Một báo cáo ca không được dài quá 48 giờ.");
     }
     return { startAt: start.toISOString(), endAt: end.toISOString() };
-}
-
-function formatDateTime(value: string): string {
-    return new Intl.DateTimeFormat("vi-VN", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-    }).format(new Date(value));
 }
 
 function getReportError(error: unknown): string {
@@ -203,12 +196,7 @@ const ShiftClosePage: React.FC = () => {
     const reportPeriodLabel = useMemo(() => {
         if (!reportMeta) return "Chưa có dữ liệu";
         if (reportMeta.periodMode === "DAY") {
-            return new Intl.DateTimeFormat("vi-VN", {
-                weekday: "long",
-                day: "2-digit",
-                month: "2-digit",
-                year: "numeric",
-            }).format(new Date(reportMeta.startAt));
+            return formatDate(reportMeta.startAt);
         }
         return `${formatDateTime(reportMeta.startAt)} – ${formatDateTime(reportMeta.endAt)}`;
     }, [reportMeta]);
@@ -277,12 +265,12 @@ const ShiftClosePage: React.FC = () => {
                                 {periodMode === "DAY" ? (
                                     <label className="grid gap-1.5 text-xs font-bold text-[var(--color-text-secondary)]">
                                         Chọn ngày
-                                        <input type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.target.value)} className={fieldClassName} />
+                                        <DateInput type="date" value={selectedDate} onValueChange={setSelectedDate} className={fieldClassName} />
                                     </label>
                                 ) : (
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                        <label className="grid gap-1.5 text-xs font-bold text-[var(--color-text-secondary)]">Bắt đầu ca<input type="datetime-local" value={shiftStart} onChange={(event) => setShiftStart(event.target.value)} className={fieldClassName} /></label>
-                                        <label className="grid gap-1.5 text-xs font-bold text-[var(--color-text-secondary)]">Kết thúc ca<input type="datetime-local" value={shiftEnd} onChange={(event) => setShiftEnd(event.target.value)} className={fieldClassName} /></label>
+                                        <label className="grid gap-1.5 text-xs font-bold text-[var(--color-text-secondary)]">Bắt đầu ca<DateInput type="datetime-local" value={shiftStart} onValueChange={setShiftStart} className={fieldClassName} /></label>
+                                        <label className="grid gap-1.5 text-xs font-bold text-[var(--color-text-secondary)]">Kết thúc ca<DateInput type="datetime-local" value={shiftEnd} onValueChange={setShiftEnd} className={fieldClassName} /></label>
                                     </div>
                                 )}
 

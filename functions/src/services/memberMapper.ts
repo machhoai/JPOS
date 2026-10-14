@@ -61,6 +61,7 @@ function normalizeGender(value: string | number | null | undefined): MemberGende
   if (["female", "f", "2", "nữ", "nu", "女"].includes(normalized)) {
     return "FEMALE";
   }
+  if (["3", "không rõ", "unknown"].includes(normalized)) return "UNKNOWN";
   if (normalized) return "OTHER";
   return "UNKNOWN";
 }
@@ -144,8 +145,9 @@ export function mapMemberLookup(
     phone: toOptionalString(data.phone),
     fullName: toOptionalString(data.realName),
     gender: normalizeGender(data.sex),
-    birthDate: null,
-    email: null,
+    birthDate: data.birthday?.slice(0, 10) || null,
+    email: data.email?.trim().toLowerCase() || null,
+    ...(data.nickName !== undefined ? { nickName: data.nickName ?? "" } : {}),
     levelName: toOptionalString(selectedShop?.levelName ?? data.levelName),
     shopId: selectedShop ? toFiniteNumber(selectedShop.shopId) : shopId ?? null,
     shopName: toOptionalString(selectedShop?.shopName) || null,

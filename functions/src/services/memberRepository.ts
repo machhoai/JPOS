@@ -78,12 +78,26 @@ export function parseStoredMemberProfile(
   }
 
   return {
+    ...(typeof data.hkImportHash === "string" ? {
+      hkImportHash: data.hkImportHash,
+      hkSnapshot: data.hkSnapshot as Record<string, unknown>,
+      hkImportedAt: String(data.hkImportedAt ?? ""),
+      ...(data.hkImportUnassigned !== undefined ? { hkImportUnassigned: data.hkImportUnassigned === true } : {}),
+    } : {}),
+    ...(data.profileRevision !== undefined ? {
+      profileRevision: Number(data.profileRevision),
+      remoteConfirmedRevision: Number(data.remoteConfirmedRevision ?? 0),
+      nickName: typeof data.nickName === "string" ? data.nickName : "",
+      remoteSnapshot: data.remoteSnapshot as StoredMemberProfile["remoteSnapshot"],
+      syncStatus: data.syncStatus as StoredMemberProfile["syncStatus"],
+      syncLease: data.syncLease as StoredMemberProfile["syncLease"],
+    } : {}),
     schemaVersion: MEMBER_PROFILE_SCHEMA_VERSION,
     remoteUid,
     mid: nullableString(data, "mid"),
     memberCode: nullableString(data, "memberCode"),
-    phone: requiredString(data, "phone"),
-    fullName: requiredString(data, "fullName"),
+    phone: typeof data.hkImportHash === "string" && typeof data.phone === "string" ? data.phone : requiredString(data, "phone"),
+    fullName: typeof data.hkImportHash === "string" && typeof data.fullName === "string" ? data.fullName : requiredString(data, "fullName"),
     gender: memberGender(data.gender),
     birthDate: nullableString(data, "birthDate"),
     email: nullableString(data, "email"),
@@ -118,6 +132,7 @@ export async function saveStoredMemberProfile(
       : null;
     const now = new Date().toISOString();
     const profile: StoredMemberProfile = {
+      ...existing,
       ...input,
       schemaVersion: MEMBER_PROFILE_SCHEMA_VERSION,
       createdBy: existing?.createdBy ?? input.createdBy,
@@ -125,7 +140,7 @@ export async function saveStoredMemberProfile(
       updatedAt: now,
     };
 
-    transaction.set(document, profile);
+    transaction.set(document, { ...snapshot.data(), ...profile });
     return profile;
   });
 }
@@ -152,7 +167,7 @@ export async function saveStoredMemberCardIfPresent(params: {
       updatedAt,
       lastRemoteSyncAt: params.lastRemoteSyncAt,
     };
-    transaction.set(document, profile);
+    transaction.update(document, { memberCode: params.memberCode, updatedBy: params.updatedBy, updatedAt, lastRemoteSyncAt: params.lastRemoteSyncAt });
     return profile;
   });
 }

@@ -20,8 +20,11 @@ import {
   createIdleCustomerDisplayState,
 } from "@/lib/utils/customerDisplayState";
 import { showError } from "@/lib/utils/toast";
+import type { MemberEditableProfile } from "@/lib/types/memberProfileEdit";
 
 interface MemberDisplayPublisherInput {
+  editDraft?: MemberEditableProfile | null;
+  editSaved?: boolean;
   enabled: boolean;
   suppressWhenDisabled?: boolean;
   showLookupBalances?: boolean;
@@ -65,6 +68,8 @@ function memberSnapshot(
 }
 
 export function useMemberCustomerDisplayPublisher({
+  editDraft = null,
+  editSaved = false,
   enabled,
   suppressWhenDisabled = false,
   showLookupBalances = false,
@@ -87,6 +92,18 @@ export function useMemberCustomerDisplayPublisher({
   );
   const displayState = useMemo<CustomerDisplayState>(() => {
     if (!enabled) return defaultState;
+    if (editDraft || editSaved) {
+      return {
+        mode: editDraft ? "MEMBER_REVIEW" : "MEMBER_SUCCESS", memberAction: "EDIT",
+        connectionStatus: "CONNECTED",
+        member: editDraft ? {
+          fullName: editDraft.fullName, phone: editDraft.phone, gender: editDraft.gender,
+          birthDate: profileBirthDate(editDraft.birthDate), email: editDraft.email,
+          memberCode: member?.memberCode ?? null, balances: null,
+        } : memberSnapshot(draft, member, false),
+        order, payment: { status: "NOT_STARTED", qr: null },
+      };
+    }
     return {
       mode: !showLookupBalances && mutationStatus === "SUCCEEDED" && member
         ? "MEMBER_SUCCESS"
@@ -96,7 +113,7 @@ export function useMemberCustomerDisplayPublisher({
       order,
       payment: { status: "NOT_STARTED", qr: null },
     };
-  }, [defaultState, draft, enabled, member, mutationStatus, order, showLookupBalances]);
+  }, [defaultState, draft, enabled, member, mutationStatus, order, showLookupBalances, editDraft, editSaved]);
   const latestStateRef = useRef(displayState);
 
   useEffect(() => {

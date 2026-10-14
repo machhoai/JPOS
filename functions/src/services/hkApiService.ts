@@ -278,6 +278,7 @@ async function sendToHKApi<TData = Record<string, unknown>>(
         };
 
       case "member_getmember_membercode":
+      case "member_getmember_uid":
         return {
           success: true,
           msg: "",
@@ -285,6 +286,9 @@ async function sendToHKApi<TData = Record<string, unknown>>(
           data: {
             uid: "mock-member-account",
             memberCode: String(body.memberCode || ""),
+            nickName: "Thành viên thử nghiệm",
+            email: "",
+            birthday: "",
             phone: "0900000000",
             realName: "Thành viên thử nghiệm",
             sex: "male",
@@ -603,6 +607,30 @@ export async function updateRemoteMemberProfile(
     { ...input },
     "10.11.8",
   );
+}
+
+export async function fetchRemoteMemberByUid(uid: string): Promise<HKApiResponse<HKMemberLookupDataDto>> {
+  return sendToHKApi<HKMemberLookupDataDto>("member_getmember_uid", { uid }, "10.11.8");
+}
+
+export async function returnRemoteMemberCard(input: { employeeName: string; bizCode: string; memberCode: string }) {
+  if (!process.env.HK_API_BASE_URL || process.env.HK_API_BASE_URL.includes("[REMOTE_API_DOMAIN]")) throw new Error("Chưa cấu hình API HK thật để gỡ thẻ.");
+  return sendToHKApi("member_return_card", { ...input, isReturnDeposit: false }, "10.11.8");
+}
+
+export async function fetchRemoteMemberList(input: { page: number; limit: number; endTime?: string; phone?: string }): Promise<HKApiResponse<Record<string, unknown>[]>> {
+  const configuredUrl = process.env.HK_MEMBER_IMPORT_BASE_URL || process.env.HK_API_BASE_URL;
+  if (!configuredUrl || configuredUrl.includes("REMOTE_API_DOMAIN")) throw new Error("Importer cần endpoint HK thật, không sử dụng mock.");
+  const request = generateHkApiRequest({ action: "member_list", version: "10.11.8", body: { phone: "", sortField: "CreateTime", sortType: "asc", ...input } });
+  const response = await fetch(resolveHkApiEndpoint(configuredUrl), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request), signal: AbortSignal.timeout(45000),
+  });
+  if (!response.ok) throw new Error(`Không thể đọc danh sách HK: HTTP ${response.status}`);
+  return await response.json() as HKApiResponse<Record<string, unknown>[]>;
+}
+
+export async function updateRemoteMemberPhone(uid: string, newphone: string): Promise<HKApiResponse<{ newPhone: string }>> {
+  return sendToHKApi<{ newPhone: string }>("member_change_phone", { uid, newphone }, "10.11.8");
 }
 
 export async function compensateRemoteMemberBalance(params: {

@@ -1,3 +1,6 @@
+import { fetchMemberProfileHistoryForUser, updateMemberProfileSyncRetryForUser } from "../services/memberProfileEditService";
+import { searchMemberPhonesForUser } from "../services/memberPhoneSearchService";
+import { previewMemberCardReturnForUser, createMemberCardReturnJobForUser, fetchMemberCardReturnJobForUser, controlMemberCardReturnJobForUser } from "../services/memberCardReturnService";
 import * as logger from "firebase-functions/logger";
 import { randomUUID } from "crypto";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
@@ -32,9 +35,11 @@ import {
   listPosMemberStoredValueHistoryForUser,
   lookupPosMemberForUser,
   registerPosMemberForUser,
+  resumePosMemberRegistrationForUser,
   updatePosMemberProfileForUser,
 } from "../member/functions";
 import { compensatePosMemberForUser } from "../member/compensation";
+import { listMemberRenewalBatchesForUser, renewMemberStoredValueForUser } from "../services/memberRenewalService";
 import {
   finalizeMemberPackageSaleForUser,
   listMemberPackagesForUser,
@@ -119,8 +124,14 @@ export const getPosAuthSession = onCall(
     }
     if (
       action === "lookupMember" ||
+      action === "previewMemberCardReturn" || action === "createMemberCardReturnJob" || action === "fetchMemberCardReturnJob" || action === "controlMemberCardReturnJob" ||
+      action === "searchMemberPhones" ||
+      action === "resumeMemberRegistration" ||
       action === "registerMember" ||
       action === "updateMemberProfile" ||
+      action === "updateMemberProfileLocal" ||
+      action === "fetchMemberProfileHistory" ||
+      action === "updateMemberProfileSyncRetry" ||
       action === "getMemberStoredValueHistory" ||
       action === "getMemberCards" ||
       action === "getMemberPassTickets" ||
@@ -128,12 +139,24 @@ export const getPosAuthSession = onCall(
       action === "checkMemberCardForIssue" ||
       action === "confirmMemberCardIssue" ||
       action === "compensateMemberBalance" ||
+      action === "getMemberRenewalBatches" ||
+      action === "renewMemberStoredValue" ||
       action === "getMemberPackages" ||
       action === "prepareMemberPackageOrder" ||
       action === "sellMemberPackageCash" ||
       action === "finalizeMemberPackageSale"
     ) {
       try {
+        if(action==="previewMemberCardReturn")return await previewMemberCardReturnForUser(request.auth.uid,request.data?.payload);
+        if(action==="createMemberCardReturnJob")return await createMemberCardReturnJobForUser(request.auth.uid,request.data?.payload,device.id);
+        if(action==="fetchMemberCardReturnJob")return await fetchMemberCardReturnJobForUser(request.auth.uid,request.data?.payload);
+        if(action==="controlMemberCardReturnJob")return await controlMemberCardReturnJobForUser(request.auth.uid,request.data?.payload);
+        if (action === "getMemberRenewalBatches") return await listMemberRenewalBatchesForUser(request.auth.uid, request.data?.payload, device.id);
+        if (action === "renewMemberStoredValue") return await renewMemberStoredValueForUser(request.auth.uid, request.data?.payload, device.id);
+        if (action === "searchMemberPhones") return await searchMemberPhonesForUser(request.auth.uid, request.data?.payload);
+        if (action === "resumeMemberRegistration") return await resumePosMemberRegistrationForUser(request.auth.uid, request.data?.payload);
+        if (action === "fetchMemberProfileHistory") return await fetchMemberProfileHistoryForUser(request.auth.uid, request.data?.payload);
+        if (action === "updateMemberProfileSyncRetry") return await updateMemberProfileSyncRetryForUser(request.auth.uid, request.data?.payload);
         if (action === "lookupMember") {
           return await lookupPosMemberForUser(
             request.auth.uid,
@@ -144,6 +167,7 @@ export const getPosAuthSession = onCall(
           return await registerPosMemberForUser(
             request.auth.uid,
             request.data?.payload,
+            device.id,
           );
         }
         if (action === "getMemberStoredValueHistory") {
@@ -216,6 +240,7 @@ export const getPosAuthSession = onCall(
         return await updatePosMemberProfileForUser(
           request.auth.uid,
           request.data?.payload,
+          device.id,
         );
       } catch (error: unknown) {
         return throwMemberCallableError(

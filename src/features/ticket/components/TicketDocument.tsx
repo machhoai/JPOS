@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDateTime } from "@/lib/utils/dateFormat";
+
 import { QRCodeSVG } from "qrcode.react";
 import {
     DEFAULT_PRINT_TOP_MARGIN_MM,
@@ -18,13 +20,7 @@ const TicketDocument: React.FC<TicketDocumentProps> = ({
     const profile = RECEIPT_PAPER_PROFILES[settings.paperSize];
     const resolvedPrintableWidthMm = printableWidthMm ?? profile.printableWidthMm;
     const resolvedTopMarginMm = normalizePrintTopMarginMm(topMarginMm);
-    const issuedAt = new Date(ticket.issuedAt).toLocaleString("vi-VN", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
+    const issuedAt = formatDateTime(ticket.issuedAt);
 
     return (
         <article

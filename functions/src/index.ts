@@ -1,3 +1,7 @@
+export { onMemberProfileChange, retryMemberProfileChanges } from "./member/profileSyncWorker";
+export { onMemberImportCacheChanged } from "./member/memberImportJobs";
+export { onMemberRegistrationCreated, recoverMemberRegistration } from "./member/registrationRecoveryWorker";
+export { onMemberCardReturnJob, processMemberCardReturnJob } from "./member/cardReturnWorker";
 // =============================================================================
 // Firebase Cloud Functions — POS Sync Worker
 // =============================================================================

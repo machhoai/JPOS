@@ -10,6 +10,12 @@ export const SHARED_AUTH_COLLECTIONS = {
   warehouses: "warehouses",
 } as const;
 
+/** Backend-only collections nested under a POS member document. */
+export const MEMBER_SUBCOLLECTIONS = {
+  storedValueRenewals: "stored_value_renewals",
+  storedValueRenewalLocks: "stored_value_renewal_locks",
+} as const;
+
 /**
  * Collections owned by the POS application.
  *
@@ -28,6 +34,13 @@ export const POS_COLLECTIONS = {
   productSyncRuns: "pos_product_sync_runs",
   devices: "pos_devices",
   members: "pos_members",
+  memberRegistrations: "pos_member_registration_requests",
+  memberCardReturns: "pos_member_card_return_jobs",
+  memberCardLocks: "pos_member_card_locks",
+  memberProfileChanges: "pos_member_profile_changes",
+  memberProfileLocks: "pos_member_profile_locks",
+  memberImportState: "pos_member_import_state",
+  memberImportRuns: "pos_member_import_runs",
   memberCompensations: "pos_member_compensations",
   voucherCampaignSettings: "pos_voucher_campaign_settings",
   voucherRedemptions: "pos_voucher_redemptions",

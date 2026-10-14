@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDate } from "@/lib/utils/dateFormat";
+
 // =============================================================================
 // OrderCardRow — Thẻ đơn hàng dạng hàng (Row Card)
 // =============================================================================
@@ -99,11 +101,6 @@ const STATUS_CONFIG: Record<
 function formatTime(iso: string) {
     const d = new Date(iso);
     return d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDate(iso: string) {
-    const d = new Date(iso);
-    return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 export default function OrderCardRow({ order, onSelectOrder, onRetrySync, isHighlighted = false }: OrderCardRowProps) {

@@ -14,7 +14,9 @@ function load(relative, dependencies = {}) {
   }, exports);
   return exports;
 }
-const dates = load("../src/lib/utils/orderHistoryDate.ts");
+const dates = load("../src/lib/utils/orderHistoryDate.ts", {
+  "./dateFormat.ts": load("../src/lib/utils/dateFormat.ts"),
+});
 const { buildOrderNotificationHref, readOrderNotificationTarget } = load("../src/features/payments/helpers/orderNotificationLink.ts", {
   "@/lib/utils/orderHistoryDate": dates,
 });

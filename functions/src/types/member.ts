@@ -1,3 +1,4 @@
+import type { MemberProfileEditMetadata } from "./memberProfileEdit";
 export type HKNumberish = number | string | null | undefined;
 
 /** HK balance columns: 104 = Điểm, 106 = Lượt. */
@@ -77,6 +78,9 @@ export interface HKMemberShopDto {
 }
 
 export interface HKMemberLookupDataDto {
+  nickName?: string | null;
+  email?: string | null;
+  birthday?: string | null;
   uid?: string | null;
   mid?: string | null;
   memberCode?: string | null;
@@ -228,7 +232,7 @@ export interface MemberBalances {
   other: Record<string, number>;
 }
 
-export interface MemberProfile {
+export interface MemberProfile extends MemberProfileEditMetadata {
   uid: string;
   mid: string | null;
   memberCode: string | null;
@@ -320,7 +324,11 @@ export interface MemberLookupContext {
   memberCode?: string;
 }
 
-export interface StoredMemberProfile {
+export interface StoredMemberProfile extends MemberProfileEditMetadata {
+  hkSnapshot?: Record<string, unknown>;
+  hkImportHash?: string;
+  hkImportedAt?: string;
+  hkImportUnassigned?: boolean;
   schemaVersion: 1;
   remoteUid: string;
   mid: string | null;

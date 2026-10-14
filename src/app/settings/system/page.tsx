@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDateTime } from "@/lib/utils/dateFormat";
+
 import { isTauri } from "@tauri-apps/api/core";
 import { useRouter } from "next/navigation";
 import {
@@ -163,7 +165,7 @@ const SystemSettingsPage: React.FC = () => {
                       </h2>
                       {updater.publishedAt && (
                         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                          Phát hành: {new Date(updater.publishedAt).toLocaleString("vi-VN")}
+                          Phát hành: {formatDateTime(updater.publishedAt, { second: "2-digit" })}
                         </p>
                       )}
                     </div>

@@ -1,5 +1,7 @@
 import { CircleAlert, CreditCard, LoaderCircle, Phone, Radio, RotateCcw, Search, X } from "lucide-react";
 import type { CardReaderStatus, MemberLookupMode } from "@/lib/types/member";
+import MemberPhoneSuggestions from "./MemberPhoneSuggestions";
+import type { MemberPhoneSuggestion } from "@/lib/types/memberPhoneSearch";
 
 interface MemberLookupPanelProps {
     mode: MemberLookupMode;
@@ -12,6 +14,10 @@ interface MemberLookupPanelProps {
     onReadCard: () => void;
     onCancelCardRead: () => void;
     onSubmit: () => void;
+    phoneSearch?: { items: MemberPhoneSuggestion[]; loading: boolean; error: string | null; valid: boolean };
+    onSuggestionSelect?: (item: MemberPhoneSuggestion) => void;
+    onSearchRetry?: () => void;
+    phoneSelected?: boolean;
 }
 
 const MODES: Array<{
@@ -34,6 +40,10 @@ export default function MemberLookupPanel({
     onReadCard,
     onCancelCardRead,
     onSubmit,
+    phoneSearch,
+    onSuggestionSelect,
+    onSearchRetry,
+    phoneSelected = false,
 }: MemberLookupPanelProps) {
     const isReadingCard = cardReaderStatus === "READING";
     const placeholder = mode === "PHONE"
@@ -88,11 +98,15 @@ export default function MemberLookupPanel({
                         onChange={(event) => onQueryChange(event.target.value)}
                         disabled={isLookingUp}
                         inputMode={mode === "PHONE" ? "tel" : "text"}
-                        autoComplete={mode === "PHONE" ? "tel" : "off"}
+                        autoComplete="off"
+                        aria-describedby={mode === "PHONE" ? "member-phone-suggestions" : undefined}
                         placeholder={placeholder}
                         className="h-15 w-full rounded-2xl border border-[var(--color-border-subtle)] bg-white pl-12 pr-4 text-lg font-semibold transition-colors placeholder:text-sm placeholder:font-normal focus:border-[var(--color-accent)] disabled:bg-neutral-50"
                     />
                 </div>
+
+                {mode === "PHONE" && phoneSearch && !phoneSelected && <MemberPhoneSuggestions {...phoneSearch} disabled={isLookingUp} onSelect={item=>onSuggestionSelect?.(item)} onRetry={()=>onSearchRetry?.()} />}
+                {mode === "PHONE" && phoneSelected && <p className="text-sm font-semibold text-emerald-700">Đã chọn số điện thoại {query}.</p>}
 
                 {mode === "CARD" ? (
                     <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-3" aria-live="polite">
@@ -143,7 +157,7 @@ export default function MemberLookupPanel({
                 <div>
                     <button
                         type="submit"
-                        disabled={isLookingUp || isReadingCard || !query.trim()}
+                        disabled={isLookingUp || isReadingCard || !query.trim() || (mode === "PHONE" && !phoneSelected)}
                         className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--color-accent)] px-5 font-bold text-white shadow-[var(--shadow-glow)] transition hover:bg-[var(--color-accent-hover)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {isLookingUp ? <LoaderCircle className="size-5 animate-spin" /> : <Search className="size-5" />}

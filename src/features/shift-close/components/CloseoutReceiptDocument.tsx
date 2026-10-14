@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/utils/dateFormat";
 import { RECEIPT_PAPER_PROFILES } from "@/features/receipt/config/receiptConfig";
 import type { ReceiptSettings } from "@/features/receipt/types/receipt";
 import type {
@@ -15,15 +16,6 @@ const moneyFormatter = new Intl.NumberFormat("vi-VN", {
     style: "currency",
     currency: "VND",
     maximumFractionDigits: 0,
-});
-
-const dateTimeFormatter = new Intl.DateTimeFormat("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
 });
 
 const rowStyle: React.CSSProperties = {
@@ -80,8 +72,8 @@ const CloseoutReceiptDocument: React.FC<CloseoutReceiptDocumentProps> = ({
             <section style={{ display: "grid", gap: "1mm", marginTop: "3mm" }}>
                 <div style={rowStyle}><span>Điểm bán</span><span style={valueStyle}>{meta.warehouseName}</span></div>
                 <div style={rowStyle}><span>Kiểu báo cáo</span><span style={valueStyle}>{meta.periodMode === "SHIFT" ? "Theo ca" : "Theo ngày"}</span></div>
-                <div style={rowStyle}><span>Từ</span><span style={valueStyle}>{dateTimeFormatter.format(new Date(meta.startAt))}</span></div>
-                <div style={rowStyle}><span>Đến</span><span style={valueStyle}>{dateTimeFormatter.format(new Date(meta.endAt))}</span></div>
+                <div style={rowStyle}><span>Từ</span><span style={valueStyle}>{formatDateTime(meta.startAt)}</span></div>
+                <div style={rowStyle}><span>Đến</span><span style={valueStyle}>{formatDateTime(meta.endAt)}</span></div>
                 <div style={rowStyle}><span>Tài khoản</span><span style={valueStyle}>{meta.accountLabel}</span></div>
                 <div style={rowStyle}><span>Người in</span><span style={valueStyle}>{meta.generatedBy}</span></div>
             </section>
@@ -126,7 +118,7 @@ const CloseoutReceiptDocument: React.FC<CloseoutReceiptDocumentProps> = ({
                 {report.payosPendingOrders.map((order) => (
                     <div key={order.localOrderId} style={{ marginTop: "2mm", overflowWrap: "anywhere" }}>
                         <div>{order.localOrderId} · {moneyFormatter.format(order.totalAmount)}</div>
-                        <div>{order.operatorName}{order.completedAt ? ` · ${dateTimeFormatter.format(new Date(order.completedAt))}` : ""}</div>
+                        <div>{order.operatorName}{order.completedAt ? ` · ${formatDateTime(order.completedAt)}` : ""}</div>
                         {order.lastError && <div>{order.lastError}</div>}
                     </div>
                 ))}
@@ -141,7 +133,7 @@ const CloseoutReceiptDocument: React.FC<CloseoutReceiptDocumentProps> = ({
             </section>
 
             <footer style={{ borderTop: "1px dashed #000", marginTop: "3mm", paddingTop: "2mm", textAlign: "center", fontSize: "0.9em" }}>
-                Lập lúc {dateTimeFormatter.format(new Date(meta.fetchedAt))}
+                Lập lúc {formatDateTime(meta.fetchedAt)}
             </footer>
         </article>
     );

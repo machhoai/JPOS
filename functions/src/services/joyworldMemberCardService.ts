@@ -3,6 +3,7 @@ import {
   getJoyworldCashierAccessToken,
 } from "./joyworldCatalogService";
 import { fetchRemoteMemberCards } from "./hkApiService";
+import { withCardIssueLock } from "./memberCardLinkLocks";
 import { saveStoredMemberCardIfPresent } from "./memberRepository";
 import { assertWarehouseAccess } from "../member/functions";
 import {
@@ -26,6 +27,7 @@ export interface CashierRequest {
   method?: "GET" | "POST";
   query?: Record<string, string>;
   body?: unknown;
+  bizCode?: string;
 }
 
 export interface MemberCardIssueInfo {
@@ -103,6 +105,7 @@ async function executeCashierRequest(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       "JJ-SHOPID": String(request.shopId),
+      ...(request.bizCode ? { "JJ-BizCode": request.bizCode } : {}),
     },
     body: request.body === undefined
       ? undefined
@@ -111,7 +114,7 @@ async function executeCashierRequest(
   });
 }
 
-async function cashierRequest(
+export async function cashierRequest(
   request: CashierRequest,
 ): Promise<JoyworldResponse> {
   try {
@@ -524,7 +527,7 @@ export async function checkMemberCardForIssueForUser(
   return checkCard(input.shopId, input.memberCode);
 }
 
-export async function confirmMemberCardIssueForUser(
+async function confirmMemberCardIssueUnlocked(
   userId: string,
   data: unknown,
 ): Promise<ConfirmMemberCardIssueResult> {
@@ -639,4 +642,11 @@ export async function confirmMemberCardIssueForUser(
   return {
     message: remoteMessage(response) || "Đã cấp thêm thẻ thành viên thành công.",
   };
+}
+
+export async function confirmMemberCardIssueForUser(userId:string,data:unknown):Promise<ConfirmMemberCardIssueResult> {
+  const input=validateMemberCardIssueConfirmInput(data);
+  if(input.uid!==input.memberAcctId)throw new MemberCardIssueError("CARD_STATE_CHANGED","UID thành viên không khớp tài khoản đang gắn thẻ.");
+  await assertWarehouseAccess(userId,input.warehouseId);
+  return withCardIssueLock(input.shopId,input.uid,input.memberCode,()=>confirmMemberCardIssueUnlocked(userId,data));
 }

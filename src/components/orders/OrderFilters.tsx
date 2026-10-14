@@ -1,5 +1,7 @@
 "use client";
 
+import DateInput from "@/components/ui/DateInput";
+
 // =============================================================================
 // OrderFilters — Bộ lọc đơn hàng trong ngày được chọn
 // =============================================================================
@@ -73,12 +75,12 @@ const OrderFilters: React.FC<OrderFiltersProps> = ({
                         <span className="whitespace-nowrap text-xs font-semibold text-[var(--color-text-muted)]">
                             Ngày:
                         </span>
-                        <input
+                        <DateInput
                             type="date"
                             value={selectedDate}
                             max={maxDate}
-                            onChange={(event) => {
-                                if (event.target.value) onDateChange(event.target.value);
+                            onValueChange={(value) => {
+                                if (value) onDateChange(value);
                             }}
                             required
                             className="min-h-10 min-w-0 flex-1 cursor-pointer rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-semibold text-[var(--color-text-primary)] transition-colors focus:border-[var(--color-accent)] md:text-sm"

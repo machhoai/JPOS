@@ -1,5 +1,7 @@
 "use client";
 
+import { formatDateTime } from "@/lib/utils/dateFormat";
+
 // =============================================================================
 // OrderDetailModal — Chi tiết đơn hàng đầy đủ
 // =============================================================================
@@ -33,13 +35,6 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
     SYNC_FAILED: { label: "Lỗi đồng bộ", color: "text-red-400" },
     DRAFT: { label: "Nháp", color: "text-gray-400" },
 };
-
-function formatDateTime(iso: string) {
-    return new Date(iso).toLocaleString("vi-VN", {
-        day: "2-digit", month: "2-digit", year: "numeric",
-        hour: "2-digit", minute: "2-digit",
-    });
-}
 
 export default function OrderDetailModal({
     order,

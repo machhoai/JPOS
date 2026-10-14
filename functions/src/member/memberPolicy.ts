@@ -50,6 +50,7 @@ export interface MemberLookupInput extends MemberScopeInput {
   mode: MemberLookupMode;
   query: string;
   cardLookupKind?: MemberCardLookupKind;
+  selectedUid?: string;
 }
 
 export interface MemberRegistrationInput extends MemberScopeInput {
@@ -236,7 +237,9 @@ export function validateMemberLookupInput(data: unknown): MemberLookupInput {
     throw new MemberInputError("Phương thức tra cứu thành viên không hợp lệ.");
   }
   if (mode === "PHONE") {
-    return { ...scopeInput(input), mode, query: normalizePhone(input.query) };
+    const selectedUid = input.selectedUid === undefined ? undefined : requiredString(input.selectedUid, "UID đã chọn", 128);
+    if (selectedUid && !/^[a-zA-Z0-9_-]{1,128}$/.test(selectedUid)) throw new MemberInputError("UID đã chọn không hợp lệ.");
+    return { ...scopeInput(input), mode, query: normalizePhone(input.query), ...(selectedUid ? { selectedUid } : {}) };
   }
 
   const cardLookupKind = input.cardLookupKind ?? "MEMBER_CODE";

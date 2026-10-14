@@ -43,8 +43,35 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Hồ sơ chỉnh sửa và lịch sử thử đồng bộ chỉ được truy cập qua backend.
+    match /pos_member_profile_locks/{lockId} {
+      allow read, write: if false;
+    }
+
+    match /pos_member_profile_changes/{operationId} {
+      allow read, write: if false;
+      match /attempts/{attemptId} {
+        allow read, write: if false;
+      }
+    }
+
+    // Import HK: metadata/hash manifests and run summaries are backend-only.
+    match /pos_member_import_state/{stateId} { allow read, write: if false; }
+    match /pos_member_import_runs/{runId} { allow read, write: if false; }
+
+    match /pos_member_registration_requests/{registrationId} {
+      allow read, write: if false;
+      match /{document=**} { allow read, write: if false; }
+    }
+    match /pos_member_card_return_jobs/{jobId} {
+      allow read, write: if false;
+      match /{document=**} { allow read, write: if false; }
+    }
+    match /pos_member_card_locks/{lockId} { allow read, write: if false; }
     match /pos_members/{memberId} {
       allow read, write: if false;
+      match /stored_value_renewals/{operationId} { allow read, write: if false; }
+      match /stored_value_renewal_locks/{batchId} { allow read, write: if false; }
     }
 
     // Payment settings are managed exclusively by authenticated callable

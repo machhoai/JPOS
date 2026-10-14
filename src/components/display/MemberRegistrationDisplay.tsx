@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/utils/dateFormat";
 import { CalendarDays, CheckCircle2, Coins, Mail, Phone, Repeat2, UserRound, WalletCards } from "lucide-react";
 import type { CustomerDisplayMemberState } from "@/lib/types/customerDisplay";
 import type { CustomerDisplayLanguage } from "@/lib/types/customerDisplayControl";
@@ -18,7 +19,7 @@ export default function MemberRegistrationDisplay({ state, language }: MemberReg
     const details = [
         { icon: Phone, label: copy.phone, value: state.member.phone || "" },
         { icon: UserRound, label: copy.gender, value: copy.genders[state.member.gender] },
-        { icon: CalendarDays, label: copy.birthDate, value: state.member.birthDate || copy.notEntered },
+        { icon: CalendarDays, label: copy.birthDate, value: formatDate(state.member.birthDate) || copy.notEntered },
         { icon: Mail, label: copy.email, value: state.member.email || copy.notEntered },
     ];
     const balanceItems = balances ? [
@@ -35,8 +36,8 @@ export default function MemberRegistrationDisplay({ state, language }: MemberReg
                     {isSuccess ? <CheckCircle2 className="size-6" /> : <UserRound className="size-6" />}
                 </span>
                 <div>
-                    <h1 className="text-xl font-extrabold text-[var(--color-text-primary)]">{isSuccess ? copy.registrationSuccess : copy.memberInformation}</h1>
-                    <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{isSuccess ? copy.registrationThanks : copy.liveFromCashier}</p>
+                    <h1 className="text-xl font-extrabold text-[var(--color-text-primary)]">{isSuccess ? state.memberAction === "EDIT" ? copy.profileUpdateSuccess : copy.registrationSuccess : copy.memberInformation}</h1>
+                    <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{isSuccess ? state.memberAction === "EDIT" ? copy.profileUpdateThanks : copy.registrationThanks : copy.liveFromCashier}</p>
                 </div>
             </header>
 

@@ -1,14 +1,18 @@
+import { assertMemberShopScope, seedMemberEditProfile, updateMemberProfileLocally } from "../services/memberProfileEditService";
+import { createRegistrationIntent, processRegistration } from "../services/memberRegistrationService";
+import { randomUUID } from "node:crypto";
+import { db } from "../config/firebase";
+import { POS_COLLECTIONS } from "../config/collections";
 import { HttpsError } from "firebase-functions/v2/https";
 import type { HKApiResponse } from "../services/hkApiService";
 import {
   fetchRemoteMemberByCard,
   fetchRemoteMemberByCardSerial,
   fetchRemoteMemberByPhone,
+  fetchRemoteMemberByUid,
   fetchRemoteMemberCards,
   fetchRemoteMemberPassTickets,
   fetchRemoteMemberStoredValueHistory,
-  registerRemoteMember,
-  updateRemoteMemberProfile,
 } from "../services/hkApiService";
 import {
   mapMemberCards,
@@ -17,10 +21,6 @@ import {
   mapMemberStoredValueRecords,
   MemberMappingError,
 } from "../services/memberMapper";
-import {
-  getStoredMemberProfile,
-  saveStoredMemberProfile,
-} from "../services/memberRepository";
 import { getPosAuthSession } from "../services/posAuthService";
 import type {
   HKMemberStoredValueLogDto,
@@ -32,15 +32,11 @@ import type {
   StoredMemberProfile,
 } from "../types/member";
 import {
-  createMemberOpenId,
   type MemberLookupInput,
-  type MemberProfileUpdateInput,
   type MemberRegistrationInput,
   type MemberStoredValueHistoryInput,
-  toRemoteSex,
   validateMemberLookupInput,
   validateMemberPassTicketInput,
-  validateMemberProfileUpdateInput,
   validateMemberRegistrationInput,
   validateMemberRemoteScopeInput,
   validateMemberStoredValueHistoryInput,
@@ -140,9 +136,10 @@ function mergeLocalProfile(
     ...remote,
     mid: remote.mid ?? local.mid,
     memberCode: remote.memberCode ?? local.memberCode,
-    phone: remote.phone || local.phone,
-    fullName: remote.fullName || local.fullName,
-    gender: remote.gender === "UNKNOWN" ? local.gender : remote.gender,
+    ...(local.profileRevision !== undefined ? { profileRevision: local.profileRevision, remoteConfirmedRevision: local.remoteConfirmedRevision ?? 0, syncStatus: local.syncStatus ?? "SYNCED", nickName: local.nickName ?? local.fullName } : {}),
+    phone: local.profileRevision !== undefined ? local.phone : remote.phone || local.phone,
+    fullName: local.profileRevision !== undefined ? local.fullName : remote.fullName || local.fullName,
+    gender: local.profileRevision !== undefined ? local.gender : remote.gender === "UNKNOWN" ? local.gender : remote.gender,
     birthDate: local.birthDate,
     email: local.email,
   };
@@ -190,14 +187,51 @@ export async function lookupPosMemberForUser(
   data: unknown,
 ) {
   const input = validateMemberLookupInput(data);
+  assertMemberShopScope(input.shopId);
   await assertWarehouseAccess(userId, input.warehouseId);
-  const remoteMember = await fetchAndMapMember(input);
-  const localMember = await getStoredMemberProfile(remoteMember.uid);
-
-  return {
-    member: mergeLocalProfile(remoteMember, localMember),
-    fetchedAt: new Date().toISOString(),
-  };
+  let remoteMember: MemberProfile;
+  if (input.mode === "PHONE" && input.selectedUid) {
+    const selected = await db.collection(POS_COLLECTIONS.members).doc(input.selectedUid).get();
+    const profile = selected.data();
+    if (!profile || profile.shopId !== input.shopId || profile.phone !== input.query ||
+      (profile.warehouseId !== input.warehouseId && profile.hkImportUnassigned !== true)) {
+      throw new HttpsError("failed-precondition", "Gợi ý đã thay đổi hoặc không thuộc điểm bán. Vui lòng tìm lại.");
+    }
+    const response = await callRemote("member_getmember_uid", () => fetchRemoteMemberByUid(selected.id));
+    if (!response.success || !response.data || response.data.uid !== selected.id) throw new HttpsError("unavailable", "Chưa thể đọc thành viên đã chọn trên HK.");
+    remoteMember = mapMemberLookup(response.data, { shopId: input.shopId });
+    if (profile.hkImportUnassigned) {
+      const scoped = await callRemote("member_getmember_phone", () => fetchRemoteMemberByPhone({shopId: input.shopId, phone: remoteMember.phone}));
+      if (!scoped.success || !scoped.data?.items?.some(item => Number(item.shopId) === input.shopId && item.uid === selected.id)) throw new HttpsError("permission-denied", "HK chưa xác nhận thành viên tại cửa hàng.");
+      remoteMember.mid = scoped.data?.mid?.trim() || remoteMember.mid;
+    }
+    const local = await seedMemberEditProfile(remoteMember, input.warehouseId, userId);
+    return { member: mergeLocalProfile(remoteMember, local), fetchedAt: new Date().toISOString() };
+  }
+  const localMatches = input.mode === "PHONE" ? await db.collection(POS_COLLECTIONS.members)
+    .where("warehouseId", "==", input.warehouseId).where("shopId", "==", input.shopId)
+    .where("phone", "==", input.query).limit(2).get() : null;
+  if (localMatches && localMatches.size > 1) throw new HttpsError("failed-precondition", "Có nhiều hồ sơ POS cùng số điện thoại. Cần quản trị viên đối chiếu.");
+  if (localMatches && !localMatches.empty) {
+    const response = await callRemote("member_getmember_uid", () => fetchRemoteMemberByUid(localMatches.docs[0].id));
+    if (!response.success || !response.data || response.data.uid !== localMatches.docs[0].id) throw new HttpsError("unavailable", "Chưa thể đối chiếu thành viên trên HK.");
+    remoteMember = mapMemberLookup(response.data, { shopId: input.shopId });
+  } else {
+    remoteMember = await fetchAndMapMember(input);
+    // Validate account membership for the requested shop, including card lookups.
+    const phoneResponse = await fetchRemoteMemberByPhone({ shopId: input.shopId, phone: remoteMember.phone });
+    const shopMember = phoneResponse.data?.items?.find(item => Number(item.shopId) === input.shopId);
+    if (!phoneResponse.success || (shopMember?.uid ?? phoneResponse.data?.uid) !== remoteMember.uid) {
+      throw new HttpsError("permission-denied", "Tài khoản thẻ không thuộc cửa hàng được chọn.");
+    }
+    remoteMember = { ...remoteMember, mid: phoneResponse.data?.mid?.trim() || remoteMember.mid };
+    const full = await callRemote("member_getmember_uid", () => fetchRemoteMemberByUid(remoteMember.uid));
+    if (!full.success || !full.data || full.data.uid !== remoteMember.uid) throw new HttpsError("unavailable", "Chưa thể đọc đủ thông tin thành viên.");
+    const details = mapMemberLookup(full.data, { shopId: input.shopId, memberCode: remoteMember.memberCode ?? undefined });
+    remoteMember = { ...remoteMember, ...details, mid: remoteMember.mid, memberCode: remoteMember.memberCode, shopName: remoteMember.shopName };
+  }
+  const localMember = await seedMemberEditProfile(remoteMember, input.warehouseId, userId);
+  return { member: mergeLocalProfile(remoteMember, localMember), fetchedAt: new Date().toISOString() };
 }
 
 async function fetchStoredValueHistoryPage(
@@ -391,133 +425,41 @@ function registrationProfile(
   };
 }
 
-async function persistProfileAfterRemoteSuccess(params: {
-  input: MemberRegistrationInput;
-  userId: string;
-  remoteUid: string;
-  mid: string | null;
-  memberCode: string | null;
-}): Promise<StoredMemberProfile> {
-  const remoteSyncAt = new Date().toISOString();
-  try {
-    return await saveStoredMemberProfile({
-      remoteUid: params.remoteUid,
-      mid: params.mid,
-      memberCode: params.memberCode,
-      phone: params.input.phone,
-      fullName: params.input.fullName,
-      gender: params.input.gender,
-      birthDate: params.input.birthDate,
-      email: params.input.email,
-      shopId: params.input.shopId,
-      warehouseId: params.input.warehouseId,
-      createdBy: params.userId,
-      updatedBy: params.userId,
-      lastRemoteSyncAt: remoteSyncAt,
-    });
-  } catch {
-    throw new MemberLocalPersistenceError(
-      "OpenAPI đã xử lý thành công nhưng POS không thể lưu hồ sơ local. " +
-      "Vui lòng liên hệ quản trị viên trước khi thử lại.",
-    );
-  }
-}
-
 export async function registerPosMemberForUser(
   userId: string,
   data: unknown,
+  deviceId = "",
 ) {
   const input = validateMemberRegistrationInput(data);
+  assertMemberShopScope(input.shopId);
   await assertWarehouseAccess(userId, input.warehouseId);
-  const response = await callRemote(
-    "member_join",
-    () => registerRemoteMember({
-      openId: createMemberOpenId(input.phone),
-      phone: input.phone,
-      realName: input.fullName,
-    }),
-  );
-  const remoteUid = response.data?.uid?.trim() || "";
-
-  if (!response.success || !remoteUid) {
-    throw new MemberRemoteApiError(
-      "member_join",
-      response.code,
-      remoteReason(response, "OpenAPI không thể đăng ký thành viên."),
-    );
-  }
-
-  const mid = response.data?.mid?.trim() || null;
-  const stored = await persistProfileAfterRemoteSuccess({
-    input,
-    userId,
-    remoteUid,
-    mid,
-    memberCode: null,
-  });
-
+  const raw = data as Record<string, unknown>;
+  const operationId = typeof raw.operationId === "string" ? raw.operationId : randomUUID();
+  const id = await createRegistrationIntent(input, userId, deviceId, operationId);
+  const { profile: stored } = await processRegistration(id);
   return {
-    member: registrationProfile({ ...input, memberCode: null }, remoteUid, mid),
-    remoteMessage: response.msg || null,
+    member: registrationProfile({ ...input, ...stored }, stored.remoteUid, stored.mid),
+    remoteMessage: null,
     createdAt: stored.createdAt,
+    registrationId: id,
   };
 }
 
-function updateInputAsRegistration(
-  input: MemberProfileUpdateInput,
-): MemberRegistrationInput {
-  return {
-    shopId: input.shopId,
-    warehouseId: input.warehouseId,
-    fullName: input.fullName,
-    phone: input.phone,
-    memberCode: input.memberCode,
-    gender: input.gender,
-    birthDate: input.birthDate,
-    email: input.email,
-  };
+export async function updatePosMemberProfileForUser(userId: string, data: unknown, deviceId = "") {
+  if (!deviceId) throw new HttpsError("permission-denied", "Cần xác minh thiết bị POS trước khi chỉnh sửa.");
+  return updateMemberProfileLocally(userId, data, deviceId);
 }
 
-export async function updatePosMemberProfileForUser(
-  userId: string,
-  data: unknown,
-) {
-  const input = validateMemberProfileUpdateInput(data);
-  await assertWarehouseAccess(userId, input.warehouseId);
-  const sex = toRemoteSex(input.gender);
-  const response = await callRemote(
-    "member_info_modify",
-    () => updateRemoteMemberProfile({
-      uid: input.uid,
-      ...(input.mid ? { mid: input.mid } : {}),
-      realName: input.fullName,
-      nickName: input.fullName,
-      email: input.email ?? "",
-      birthday: input.birthDate ?? "",
-      ...(sex ? { sex } : {}),
-    }),
-  );
-
-  if (!response.success || response.data !== true) {
-    throw new MemberRemoteApiError(
-      "member_info_modify",
-      response.code,
-      remoteReason(response, "OpenAPI không thể cập nhật hồ sơ thành viên."),
-    );
-  }
-
-  const existing = await getStoredMemberProfile(input.uid);
-  const stored = await persistProfileAfterRemoteSuccess({
-    input: updateInputAsRegistration(input),
-    userId,
-    remoteUid: input.uid,
-    mid: input.mid ?? existing?.mid ?? null,
-    memberCode: input.memberCode ?? existing?.memberCode ?? null,
-  });
-
-  return {
-    profile: stored,
-    remoteMessage: response.msg || null,
-    updatedAt: stored.updatedAt,
-  };
+export async function resumePosMemberRegistrationForUser(userId: string, data: unknown) {
+  const input = data as { registrationId?: unknown; shopId?: unknown; warehouseId?: unknown } | null;
+  const id = typeof input?.registrationId === "string" ? input.registrationId : "";
+  const warehouseId = typeof input?.warehouseId === "string" ? input.warehouseId : "";
+  const shopId = Number(input?.shopId);
+  if (!/^[a-f0-9]{64}$/.test(id) || !warehouseId) throw new HttpsError("invalid-argument", "Yêu cầu phục hồi không hợp lệ.");
+  assertMemberShopScope(shopId);
+  await assertWarehouseAccess(userId, warehouseId);
+  const intent = (await db.collection(POS_COLLECTIONS.memberRegistrations).doc(id).get()).data();
+  if (!intent || intent.warehouseId !== warehouseId || intent.shopId !== shopId) throw new HttpsError("permission-denied", "Yêu cầu đăng ký không thuộc điểm bán.");
+  const { profile: stored } = await processRegistration(id);
+  return { member: registrationProfile(stored, stored.remoteUid, stored.mid), remoteMessage: null, createdAt: stored.createdAt, registrationId: id };
 }

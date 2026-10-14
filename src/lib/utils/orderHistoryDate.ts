@@ -1,3 +1,4 @@
+import { formatDate } from "./dateFormat.ts";
 export interface OrderHistoryDayRange {
   startAt: string;
   endAt: string;
@@ -57,10 +58,5 @@ export function getOrderHistoryDayRange(
 
 export function formatOrderHistoryDate(selectedDate: string): string {
   const { startAt } = getOrderHistoryDayRange(selectedDate);
-  return new Date(startAt).toLocaleDateString("vi-VN", {
-    timeZone: VIETNAM_TIME_ZONE,
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  return formatDate(startAt, { timeZone: VIETNAM_TIME_ZONE });
 }

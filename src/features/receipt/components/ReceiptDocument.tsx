@@ -1,3 +1,4 @@
+import { formatDateTime } from "@/lib/utils/dateFormat";
 import type { CSSProperties } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -34,16 +35,6 @@ function formatMoney(value: number, language: ReceiptLanguage): string {
     }).format(Math.round(value));
 }
 
-function formatDateTime(value: string, language: ReceiptLanguage): string {
-    return new Date(value).toLocaleString(getReceiptLocale(language), {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    });
-}
-
 function formatTaxRate(value: number, language: ReceiptLanguage): string {
     return Number.isInteger(value)
         ? String(value)
@@ -67,7 +58,6 @@ const valueStyle: CSSProperties = {
     textAlign: "right",
     fontVariantNumeric: "tabular-nums",
 };
-
 
 interface ThemeMessageBannerProps {
     theme: ReceiptTheme;
@@ -258,7 +248,7 @@ const ReceiptDocument: React.FC<ReceiptDocumentProps> = ({
                 </div>
                 <div style={rowStyle}>
                     <span style={labelStyle}>{copy.dateTime}:</span>
-                    <span style={valueStyle}>{formatDateTime(order.paidAt || order.createdAt, language)}</span>
+                    <span style={valueStyle}>{formatDateTime(order.paidAt || order.createdAt)}</span>
                 </div>
                 {settings.showCashier && order.operatorName && (
                     <div style={rowStyle}>

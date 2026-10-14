@@ -138,6 +138,7 @@ export interface CustomerDisplaySuccessState extends CustomerDisplayBaseState {
 }
 
 export interface CustomerDisplayMemberState extends CustomerDisplayBaseState {
+  memberAction?: "REGISTER" | "EDIT";
   mode: "MEMBER_REVIEW" | "MEMBER_SUCCESS";
   member: CustomerDisplayMemberSnapshot;
   order: CustomerDisplayOrderSnapshot | null;

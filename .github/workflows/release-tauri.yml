@@ -81,13 +81,12 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Nhận cấu hình két tiền riêng cho từng máy từ JPULSE, cập nhật realtime và giữ cache offline.
-            - Giữ hỗ trợ ESC/POS và TSPL; máy in điều khiển két vẫn là máy in đã chọn tại JPOS.
-            - Cho nhân viên có quyền mở két thử và mở thủ công; cấu hình đã quản lý tập trung được hiển thị tại JPOS.
-            - Cách ly đồng bộ và lỗi két khỏi xác minh thiết bị, thanh toán và in bill; không thay đổi logic thanh toán và không triển khai Cloud Functions trong bản phát hành này.
+            - Cập nhật tìm kiếm bằng số điện thoại: Hiển thị danh sách khi tìm kiếm.
+            - Bổ sung chức năng gia hạn cho gói thẻ thành viên.
+            - Bổ sung chức năng hủy thẻ (gỡ liên kết thẻ khỏi thành viên để sử dụng lại).
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
-          generateReleaseNotes: true
+          generateReleaseNotes: false
           releaseDraft: false
           prerelease: false
           updaterJsonPreferNsis: true

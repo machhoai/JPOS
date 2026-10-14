@@ -1,3 +1,4 @@
+import DateInput from "@/components/ui/DateInput";
 import { useState } from "react";
 import {
   IoCalendarOutline,
@@ -111,10 +112,10 @@ const MemberHistoryFilters: React.FC<MemberHistoryFiltersProps> = ({
 
       {showCustomDates ? <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-xs font-bold text-[var(--color-text-secondary)]">Từ ngày
-          <input type="date" value={startDate} max={endDate} onChange={(event) => onStartDateChange(event.target.value)} disabled={disabled} className="mt-1.5 min-h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm font-semibold" />
+          <DateInput type="date" value={startDate} max={endDate} onValueChange={onStartDateChange} disabled={disabled} className="mt-1.5 min-h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm font-semibold" />
         </label>
         <label className="text-xs font-bold text-[var(--color-text-secondary)]">Đến ngày
-          <input type="date" value={endDate} min={startDate} onChange={(event) => onEndDateChange(event.target.value)} disabled={disabled} className="mt-1.5 min-h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm font-semibold" />
+          <DateInput type="date" value={endDate} min={startDate} onValueChange={onEndDateChange} disabled={disabled} className="mt-1.5 min-h-11 w-full rounded-xl border border-[var(--color-border)] bg-white px-3 text-sm font-semibold" />
         </label>
       </div> : null}
     </div>

@@ -1,3 +1,4 @@
+import type { MemberProfileEditMetadata } from "./memberProfileEdit";
 export type MemberLookupMode = "CARD" | "PHONE";
 export type MemberCardLookupKind = "MEMBER_CODE" | "SERIAL_NUMBER";
 export type MemberGender = "MALE" | "FEMALE" | "OTHER" | "UNKNOWN";
@@ -33,7 +34,7 @@ export interface MemberBalances {
   other: Record<string, number>;
 }
 
-export interface MemberProfile {
+export interface MemberProfile extends MemberProfileEditMetadata {
   uid: string;
   mid: string | null;
   memberCode: string | null;

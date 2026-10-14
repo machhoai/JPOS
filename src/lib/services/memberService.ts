@@ -14,6 +14,7 @@ export interface MemberLookupInput {
   mode: MemberLookupMode;
   query: string;
   cardLookupKind?: MemberCardLookupKind;
+  selectedUid?: string;
 }
 
 export interface MemberLookupResult {
@@ -203,8 +204,12 @@ export async function registerMember(
     birthDate: string | null;
     email: string | null;
     memberCode: string | null;
+    operationId: string;
   };
   const birthDate = normalizedBirthDate(draft).birthDate;
+  const key = `jpos-registration:${input.shopId}:${input.warehouseId}:${draft.phone}`;
+  let operationId = crypto.randomUUID();
+  try { operationId = localStorage.getItem(key) || operationId; localStorage.setItem(key, operationId); } catch { /* Backend phone lock also protects retries without browser storage. */ }
   const callable = httpsCallable<
     { action: "registerMember"; payload: RegistrationPayload },
     MemberRegistrationResult
@@ -214,6 +219,7 @@ export async function registerMember(
     const result = await callable(await withDeviceAuth({
       action: "registerMember" as const,
       payload: {
+        operationId,
         fullName: draft.fullName,
         phone: draft.phone,
         memberCode: draft.memberCode || null,

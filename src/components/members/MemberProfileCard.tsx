@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "@/lib/utils/dateFormat";
 import { CalendarDays, CreditCard, Mail, Phone, Star, UserRound } from "lucide-react";
 import type { MemberGender, MemberProfile } from "@/lib/types/member";
 
@@ -21,7 +22,7 @@ export default function MemberProfileCard({ member, fetchedAt }: MemberProfileCa
     const details = [
         { icon: Phone, label: "Điện thoại", value: member.phone || "Chưa cập nhật" },
         { icon: CreditCard, label: "Mã thẻ", value: member.memberCode || "Chưa cấp thẻ" },
-        { icon: CalendarDays, label: "Ngày sinh", value: member.birthDate || "Chưa cập nhật" },
+        { icon: CalendarDays, label: "Ngày sinh", value: formatDate(member.birthDate) || "Chưa cập nhật" },
         { icon: UserRound, label: "Giới tính", value: genderLabel(member.gender) },
         { icon: Mail, label: "Email", value: member.email || "Chưa cập nhật" },
     ];
@@ -77,7 +78,7 @@ export default function MemberProfileCard({ member, fetchedAt }: MemberProfileCa
             </div>
             {fetchedAt && (
                 <p className="border-t border-[var(--color-border)] px-5 py-3 text-right text-xs text-[var(--color-text-muted)]">
-                    Dữ liệu OpenAPI lúc {new Date(fetchedAt).toLocaleString("vi-VN")}
+                    Dữ liệu OpenAPI lúc {formatDateTime(fetchedAt, { second: "2-digit" })}
                 </p>
             )}
         </section>
