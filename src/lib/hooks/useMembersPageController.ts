@@ -12,6 +12,8 @@ import { useCustomerDisplayWindow } from "@/lib/hooks/useCustomerDisplayWindow";
 import { useBarcodeScanner } from "@/lib/hooks/useBarcodeScanner";
 import { useMemberProfileEditController } from "@/lib/hooks/useMemberProfileEditController";
 import { useMemberPhoneSuggestions } from "@/lib/hooks/useMemberPhoneSuggestions";
+import { detectScannedPartnerCard } from "@/lib/services/memberCardRecoveryDetection";
+import type { PartnerCardRecoveryMatch } from "@/lib/types/partnerCardRecovery";
 import { resumeMemberRegistration } from "@/lib/services/memberPhoneSearchService";
 import type { MemberPhoneSuggestion } from "@/lib/types/memberPhoneSearch";
 import { useMemberCustomerDisplayPublisher } from "@/lib/hooks/useMemberCustomerDisplayPublisher";
@@ -64,6 +66,7 @@ export function useMembersPageController() {
     const [completedRegistrationMember, setCompletedRegistrationMember] = useState<MemberProfile | null>(null);
     const cardReadAttemptRef = useRef(0);
     const [selectedPhone, setSelectedPhone] = useState<MemberPhoneSuggestion | null>(null);
+    const [partnerRecovery, setPartnerRecovery] = useState<(PartnerCardRecoveryMatch & { actorId: string }) | null>(null);
     const hasStartedInitialCardReadRef = useRef(false);
 
     const mode = useMemberStore((state) => state.lookupMode);
@@ -247,7 +250,7 @@ export function useMembersPageController() {
     useEffect(() => () => {
         cardReadAttemptRef.current += 1;
         void cancelMemberCardRead();
-    }, []);
+    }, [auth.effectiveWarehouseId, auth.user?.uid]);
 
     const handleLookup = useCallback(async (override?: LookupOverride) => {
         if (renewalBusy) return;
@@ -326,7 +329,7 @@ export function useMembersPageController() {
     },[auth.effectiveWarehouseId,handleLookup,shopId,setQuery,startLookup,failLookup,profileEdit,phoneSearch,renewalBusy]);
 
     const handleCardRead = useCallback(async () => {
-        if (renewalBusy) return;
+        if (renewalBusy || (partnerRecovery?.input.warehouseId === auth.effectiveWarehouseId && partnerRecovery.actorId === auth.user?.uid) || !auth.effectiveWarehouseId) return;
         const attemptId = cardReadAttemptRef.current + 1;
         cardReadAttemptRef.current = attemptId;
         startCardRead();
@@ -341,7 +344,10 @@ export function useMembersPageController() {
             const cardLookupKind: MemberCardLookupKind = result.memberCode
                 ? "MEMBER_CODE"
                 : "SERIAL_NUMBER";
+            const match = await detectScannedPartnerCard(result, shopId, auth.effectiveWarehouseId);
+            if (cardReadAttemptRef.current !== attemptId) return;
             completeCardRead(cardNumber, cardLookupKind);
+            if (match) { setPartnerRecovery({ ...match, actorId: auth.user?.uid ?? "" }); return; }
             await handleLookup({
                 mode: "CARD",
                 query: cardNumber,
@@ -353,7 +359,7 @@ export function useMembersPageController() {
             if (readerError.code === "READ_CANCELLED") return;
             failCardRead(readerError.message);
         }
-    }, [completeCardRead, failCardRead, handleLookup, startCardRead, renewalBusy]);
+    }, [completeCardRead, failCardRead, handleLookup, startCardRead, renewalBusy, partnerRecovery, shopId, auth.effectiveWarehouseId, auth.user?.uid]);
 
     useEffect(() => {
         if (
@@ -683,5 +689,5 @@ export function useMembersPageController() {
     }, [completedRegistrationMember, handleRegister, requestCheckoutModal, router]);
 
     
-    return { auth, operation, fetchedAt, setFetchedAt, registrationCardReaderStatus, registrationCardReaderError, pendingRegistrationMember, completedRegistrationMember, mode, query, request, cardReaderStatus, cardReaderError, member, draft, mutation, products, productsLoading, productsError, fetchProducts, cartItems, isPaymentLocked, updateCartQuantity, resetSession, shopId, memberActivity, compensation, canCompensate, memberPackageSale, canEditMember, canReadMemberHistory, canRetryMemberSync, profileEdit, handleLookup, handleCardRead, handleRegistrationCardRead, handleCancelRegistrationCardRead, handleClearRegistrationCard, handleResetRegistrationFlow, handleRegistrationDraftChange, handleCancelCardRead, handleModeChange, handleQueryChange, handleOperationChange, handleAddProduct, handleRegister, handleRegisterAndCheckout, phoneSearch, handleSuggestionSelect, phoneSelected: selectedPhone?.phone === query, renewalBusy, setRenewalBusy, refreshAfterRenewal };
+    return { auth, operation, partnerRecovery: partnerRecovery?.input.warehouseId === auth.effectiveWarehouseId && partnerRecovery.actorId === auth.user?.uid ? partnerRecovery : null, setPartnerRecovery, fetchedAt, setFetchedAt, registrationCardReaderStatus, registrationCardReaderError, pendingRegistrationMember, completedRegistrationMember, mode, query, request, cardReaderStatus, cardReaderError, member, draft, mutation, products, productsLoading, productsError, fetchProducts, cartItems, isPaymentLocked, updateCartQuantity, resetSession, shopId, memberActivity, compensation, canCompensate, memberPackageSale, canEditMember, canReadMemberHistory, canRetryMemberSync, profileEdit, handleLookup, handleCardRead, handleRegistrationCardRead, handleCancelRegistrationCardRead, handleClearRegistrationCard, handleResetRegistrationFlow, handleRegistrationDraftChange, handleCancelCardRead, handleModeChange, handleQueryChange, handleOperationChange, handleAddProduct, handleRegister, handleRegisterAndCheckout, phoneSearch, handleSuggestionSelect, phoneSelected: selectedPhone?.phone === query, renewalBusy, setRenewalBusy, refreshAfterRenewal };
 }

@@ -27,7 +27,8 @@ export async function fetchCardReturnOwner(shopId: number, memberCode: string): 
   const mid=String(details.memberId ?? selected.memberId ?? ""),linkId=String(card.memberCardId ?? card.id ?? "");
   if(!/^[a-zA-Z0-9_-]{1,128}$/.test(uid)||!/^[a-zA-Z0-9_-]{1,128}$/.test(mid)||!linkId)throw new HttpsError("failed-precondition","HK thiếu định danh tài khoản/quan hệ thẻ để đối chiếu an toàn.");
   if (Number(details.memberLevelType ?? selected.memberLevelType) !== 1) throw new HttpsError("failed-precondition","Chỉ hỗ trợ thẻ thành viên thông thường. Thẻ khách vãng lai/đặc biệt chưa được phép gỡ.");
-  if (details.isEnabled !== true) throw new HttpsError("failed-precondition","Thành viên đang bị vô hiệu hóa, cần quản trị viên đối chiếu.");
+  // HK permits returning a linked card while its member remains disabled.
+  // Card ownership and member type are sufficient; never enable the member here.
   return {uid,mid,memberCode,cardUuid:card.icCard.toUpperCase(),memberCardId:linkId,fullName:String(details.realName ?? selected.realName ?? ""),phone:String(details.phone ?? selected.phone ?? ""),memberLevelType:1,shopId};
 }
 export async function verifyReturnedCard(shopId: number, owner: CardReturnOwner): Promise<string | null> {

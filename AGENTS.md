@@ -10,6 +10,15 @@ Before creating, renaming, reading, or writing a Firestore collection, read and
 follow `.agent/rules/database-rules/rules.md`. POS-owned top-level collections
 must use the `pos_` namespace so they cannot collide with `bduck-system`.
 
+## Shared member directory
+
+Member information is shared across all POS stores in the configured HK system.
+`pos_members.warehouseId` records the creation store; it must not restrict member
+search or reads. Authorize the employee at the currently selected store, while
+retaining the configured HK shop boundary. Preserve the original creation store
+when a member is looked up from another store. Registration recovery and write
+operations retain their explicit permissions and workflow ownership checks.
+
 ## Date display convention
 
 All user-visible dates must use `dd/mm/yyyy`, with zero-padded day and month,

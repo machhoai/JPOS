@@ -69,6 +69,44 @@ test("expired in-flight lease reconciles instead of repeating create",async()=>{
 test("retry payload drift and warehouse drift cannot replace durable original intent",async()=>{reset();await create();await assert.rejects(()=>createRegistrationIntent({...input,email:"other@example.com"},"user","device",op));await assert.rejects(()=>createRegistrationIntent({...input,warehouseId:"other"},"user","device",op));assert.equal(documents.get(path).input.email,input.email);});
 test("unresolved remote outcome stops automatic recovery after bounded attempts",async()=>{reset();const id=await create();documents.set(path,{...documents.get(path),state:"HK_IN_FLIGHT"});behavior="missing";for(let i=0;i<6;i++)await assert.rejects(()=>processRegistration(id,true));assert.equal(documents.get(path).state,"NEEDS_REVIEW");await assert.rejects(()=>processRegistration(id,true));assert.equal(calls.filter(c=>c==="read").length,6);assert.equal(calls.includes("join"),false);});
 test("registration attempt history retains failures after later success",async()=>{reset();const id=await create();failure="member";await assert.rejects(()=>processRegistration(id));await processRegistration(id);const attempts=[...documents.entries()].filter(([p])=>p.includes("/attempts/"));assert.equal(attempts.length,2);assert.ok(attempts.some(([,d])=>d.lastError));assert.ok(attempts.some(([,d])=>d.status==="COMPLETED"));});
-test("phone suggestions query local only, include unassigned imports, omit foreign warehouses and show pending",async()=>{reset();documents.set("pos_members/a",{phone:"0901111111",fullName:"A",shopId:1,warehouseId:"store"});documents.set("pos_members/b",{phone:"0902222222",fullName:"B",shopId:1,warehouseId:"staging",hkImportUnassigned:true});documents.set("pos_members/c",{phone:"0903333333",fullName:"C",shopId:1,warehouseId:"other"});documents.set("pos_members/d",{phone:"0904444444",shopId:2,warehouseId:"store"});await create();const result=await searchMemberPhonesForUser("user",{shopId:1,warehouseId:"store",prefix:"090"});assert.deepEqual(result.suggestions.map(x=>x.uid),[registrationId(1,input.phone),"a","b"]);assert.equal(result.suggestions[0].state,"PENDING");assert.deepEqual(calls,[]);});
+test("phone suggestions share members across stores while keeping pending registration scoped",async()=>{reset();documents.set("pos_members/a",{phone:"0901111111",fullName:"A",shopId:1,warehouseId:"store"});documents.set("pos_members/b",{phone:"0902222222",fullName:"B",shopId:1,warehouseId:"staging",hkImportUnassigned:true});documents.set("pos_members/c",{phone:"0903333333",fullName:"C",shopId:1,warehouseId:"other"});documents.set("pos_members/d",{phone:"0904444444",shopId:2,warehouseId:"store"});await create();const result=await searchMemberPhonesForUser("user",{shopId:1,warehouseId:"store",prefix:"090"});assert.deepEqual(result.suggestions.map(x=>x.uid),[registrationId(1,input.phone),"a","b","c"]);assert.equal(result.suggestions[0].state,"PENDING");assert.deepEqual(calls,[]);});
 test("suggestions are capped and invalid/unauthorized requests read no directory",async()=>{reset();for(let i=0;i<30;i++)documents.set(`pos_members/a${i}`,{phone:`09000000${String(i).padStart(2,"0")}`,shopId:1,warehouseId:"store"});assert.equal((await searchMemberPhonesForUser("user",{shopId:1,warehouseId:"store",prefix:"090"})).suggestions.length,10);const before=readCount;await assert.rejects(()=>searchMemberPhonesForUser("user",{shopId:1,warehouseId:"store",prefix:"09"}));authorized=false;await assert.rejects(()=>searchMemberPhonesForUser("user",{shopId:1,warehouseId:"store",prefix:"090"}));assert.equal(readCount,before);assert.deepEqual(calls,[]);});
 test("selected UID cannot bypass phone or scope validation and never calls HK on mismatch",async()=>{reset();documents.set("pos_members/account",{phone:"0900000001",shopId:1,warehouseId:"store"});await assert.rejects(()=>lookupPosMemberForUser("user",{shopId:1,warehouseId:"store",mode:"PHONE",query:input.phone,selectedUid:"account"}));assert.deepEqual(calls,[]);});
+test("phone suggestions include disabled members with status without extra queries",async()=>{
+  reset();
+  documents.set("pos_members/disabled",{phone:"270826001",fullName:"Khách đang tắt",shopId:1,warehouseId:"store",hkSnapshot:{isEnabled:false}});
+  documents.set("pos_members/enabled",{phone:"270826002",fullName:"Khách đang bật",shopId:1,warehouseId:"store",hkSnapshot:{isEnabled:true}});
+  const result=await searchMemberPhonesForUser("user",{shopId:1,warehouseId:"store",prefix:"270826"});
+  assert.deepEqual(result.suggestions.map(x=>[x.uid,x.isEnabled,x.state]),[["disabled",false,"READY"],["enabled",true,"READY"]]);
+  assert.equal(readCount,2);assert.deepEqual(calls,[]);
+});
+test("selecting a disabled phone suggestion loads the full profile and disabled status",async()=>{
+  reset();await processRegistration(await create());
+  const cashier=require('../lib/services/joyworldMemberCardService');
+  const originalUid=hk.fetchRemoteMemberByUid,originalCashier=cashier.cashierRequest;
+  hk.fetchRemoteMemberByUid=async()=>({success:true,data:{uid:'account',phone:input.phone,realName:'Khách đang tắt',storedValues:[{category:104,value:5}]}});
+  cashier.cashierRequest=async request=>{assert.equal(request.path,'/member/cashier/member/getdetails');return{success:true,data:{shopId:1,isEnabled:false}};};
+  try{
+    const result=await lookupPosMemberForUser('user',{shopId:1,warehouseId:'store',mode:'PHONE',query:input.phone,selectedUid:'account'});
+    assert.equal(result.member.uid,'account');assert.equal(result.member.isEnabled,false);assert.equal(result.member.balances.points,5);
+  }finally{hk.fetchRemoteMemberByUid=originalUid;cashier.cashierRequest=originalCashier;}
+});
+test("selected and exact-phone lookup read other-store members without changing their creation store",async()=>{
+  const cashier=require('../lib/services/joyworldMemberCardService');
+  const originalUid=hk.fetchRemoteMemberByUid,originalCashier=cashier.cashierRequest;
+  hk.fetchRemoteMemberByUid=async()=>({success:true,data:{uid:'account',phone:input.phone,realName:'Khách dùng chung',storedValues:[]}});
+  cashier.cashierRequest=async()=>({success:true,data:{shopId:1,isEnabled:false}});
+  try{for(const selectedUid of ['account',undefined]){
+    reset();await processRegistration(await create());
+    const profile=documents.get('pos_members/account');
+    documents.set('pos_members/account',{...profile,warehouseId:'creation-store'});
+    const result=await lookupPosMemberForUser('user',{shopId:1,warehouseId:'store',mode:'PHONE',query:input.phone,...(selectedUid?{selectedUid}:{})});
+    assert.equal(result.member.uid,'account');assert.equal(result.member.isEnabled,false);
+    assert.equal(documents.get('pos_members/account').warehouseId,'creation-store');
+  }}finally{hk.fetchRemoteMemberByUid=originalUid;cashier.cashierRequest=originalCashier;}
+});
+test("shared lookup does not permit selected UIDs from another HK system",async()=>{
+  reset();documents.set('pos_members/other-shop',{phone:input.phone,warehouseId:'other',shopId:2});
+  await assert.rejects(()=>lookupPosMemberForUser('user',{shopId:1,warehouseId:'store',mode:'PHONE',query:input.phone,selectedUid:'other-shop'}));
+  assert.deepEqual(calls,[]);
+});

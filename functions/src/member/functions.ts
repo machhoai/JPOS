@@ -1,4 +1,5 @@
 import { assertMemberShopScope, seedMemberEditProfile, updateMemberProfileLocally } from "../services/memberProfileEditService";
+import { withLiveMemberStatus } from "../services/memberLookupStatus";
 import { createRegistrationIntent, processRegistration } from "../services/memberRegistrationService";
 import { randomUUID } from "node:crypto";
 import { db } from "../config/firebase";
@@ -193,9 +194,8 @@ export async function lookupPosMemberForUser(
   if (input.mode === "PHONE" && input.selectedUid) {
     const selected = await db.collection(POS_COLLECTIONS.members).doc(input.selectedUid).get();
     const profile = selected.data();
-    if (!profile || profile.shopId !== input.shopId || profile.phone !== input.query ||
-      (profile.warehouseId !== input.warehouseId && profile.hkImportUnassigned !== true)) {
-      throw new HttpsError("failed-precondition", "Gợi ý đã thay đổi hoặc không thuộc điểm bán. Vui lòng tìm lại.");
+    if (!profile || profile.shopId !== input.shopId || profile.phone !== input.query) {
+      throw new HttpsError("failed-precondition", "Gợi ý đã thay đổi hoặc không thuộc hệ thống thành viên. Vui lòng tìm lại.");
     }
     const response = await callRemote("member_getmember_uid", () => fetchRemoteMemberByUid(selected.id));
     if (!response.success || !response.data || response.data.uid !== selected.id) throw new HttpsError("unavailable", "Chưa thể đọc thành viên đã chọn trên HK.");
@@ -205,11 +205,12 @@ export async function lookupPosMemberForUser(
       if (!scoped.success || !scoped.data?.items?.some(item => Number(item.shopId) === input.shopId && item.uid === selected.id)) throw new HttpsError("permission-denied", "HK chưa xác nhận thành viên tại cửa hàng.");
       remoteMember.mid = scoped.data?.mid?.trim() || remoteMember.mid;
     }
+    remoteMember = await withLiveMemberStatus(remoteMember, input.shopId);
     const local = await seedMemberEditProfile(remoteMember, input.warehouseId, userId);
     return { member: mergeLocalProfile(remoteMember, local), fetchedAt: new Date().toISOString() };
   }
   const localMatches = input.mode === "PHONE" ? await db.collection(POS_COLLECTIONS.members)
-    .where("warehouseId", "==", input.warehouseId).where("shopId", "==", input.shopId)
+    .where("shopId", "==", input.shopId)
     .where("phone", "==", input.query).limit(2).get() : null;
   if (localMatches && localMatches.size > 1) throw new HttpsError("failed-precondition", "Có nhiều hồ sơ POS cùng số điện thoại. Cần quản trị viên đối chiếu.");
   if (localMatches && !localMatches.empty) {
@@ -230,6 +231,7 @@ export async function lookupPosMemberForUser(
     const details = mapMemberLookup(full.data, { shopId: input.shopId, memberCode: remoteMember.memberCode ?? undefined });
     remoteMember = { ...remoteMember, ...details, mid: remoteMember.mid, memberCode: remoteMember.memberCode, shopName: remoteMember.shopName };
   }
+  remoteMember = await withLiveMemberStatus(remoteMember, input.shopId);
   const localMember = await seedMemberEditProfile(remoteMember, input.warehouseId, userId);
   return { member: mergeLocalProfile(remoteMember, localMember), fetchedAt: new Date().toISOString() };
 }

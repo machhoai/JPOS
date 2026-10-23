@@ -68,6 +68,7 @@ service cloud.firestore {
       match /{document=**} { allow read, write: if false; }
     }
     match /pos_member_card_locks/{lockId} { allow read, write: if false; }
+    match /pos_partner_card_recoveries/{cardId} { allow read, write: if false; }
     match /pos_members/{memberId} {
       allow read, write: if false;
       match /stored_value_renewals/{operationId} { allow read, write: if false; }

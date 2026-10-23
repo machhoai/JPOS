@@ -332,6 +332,16 @@
       "collectionGroup": "pos_member_import_state",
       "fieldPath": "hashes",
       "indexes": []
+    },
+    {
+      "collectionGroup": "pos_partner_card_recoveries",
+      "fieldPath": "history",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "pos_partner_card_recoveries",
+      "fieldPath": "requests",
+      "indexes": []
     }
   ]
 }

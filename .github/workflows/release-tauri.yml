@@ -81,9 +81,10 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Cập nhật tìm kiếm bằng số điện thoại: Hiển thị danh sách khi tìm kiếm.
-            - Bổ sung chức năng gia hạn cho gói thẻ thành viên.
-            - Bổ sung chức năng hủy thẻ (gỡ liên kết thẻ khỏi thành viên để sử dụng lại).
+            - Tự nhận diện thẻ đối tác thuộc bộ 600 thẻ khi đọc thẻ và xác nhận khôi phục tại quầy.
+            - Hiển thị trạng thái thành viên đang tắt khi tra cứu bằng số điện thoại.
+            - Tra cứu hồ sơ thành viên dùng chung giữa các cửa hàng.
+            - Cho phép gỡ liên kết thẻ của thành viên đang tắt và đồng bộ dữ liệu.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: false

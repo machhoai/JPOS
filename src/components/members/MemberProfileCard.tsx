@@ -53,6 +53,9 @@ export default function MemberProfileCard({ member, fetchedAt }: MemberProfileCa
                     <p className="mt-1 text-sm text-[var(--color-text-muted)]">
                         UID: {member.uid}{member.mid ? ` · MID: ${member.mid}` : ""}
                     </p>
+                    <p className={`mt-2 text-sm font-bold ${member.isEnabled === false ? "text-red-700" : "text-[var(--color-text-secondary)]"}`}>
+                        Trạng thái: {member.isEnabled === false ? "Đang tắt" : member.isEnabled === true ? "Đang bật" : "Chưa xác định"}
+                    </p>
                 </div>
             </div>
 

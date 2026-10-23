@@ -1,5 +1,6 @@
 import { fetchMemberProfileHistoryForUser, updateMemberProfileSyncRetryForUser } from "../services/memberProfileEditService";
 import { searchMemberPhonesForUser } from "../services/memberPhoneSearchService";
+import { detectPartnerCardRecovery, previewPartnerCardRecovery, confirmPartnerCardRecovery, fetchPartnerCardRecovery } from "../services/partnerCardRecoveryService";
 import { previewMemberCardReturnForUser, createMemberCardReturnJobForUser, fetchMemberCardReturnJobForUser, controlMemberCardReturnJobForUser } from "../services/memberCardReturnService";
 import * as logger from "firebase-functions/logger";
 import { randomUUID } from "crypto";
@@ -124,6 +125,8 @@ export const getPosAuthSession = onCall(
     }
     if (
       action === "lookupMember" ||
+      action === "previewPartnerCardRecovery" || action === "confirmPartnerCardRecovery" || action === "fetchPartnerCardRecovery" ||
+      action === "detectPartnerCardRecovery" ||
       action === "previewMemberCardReturn" || action === "createMemberCardReturnJob" || action === "fetchMemberCardReturnJob" || action === "controlMemberCardReturnJob" ||
       action === "searchMemberPhones" ||
       action === "resumeMemberRegistration" ||
@@ -147,6 +150,10 @@ export const getPosAuthSession = onCall(
       action === "finalizeMemberPackageSale"
     ) {
       try {
+        if(action==="previewPartnerCardRecovery")return await previewPartnerCardRecovery(request.auth.uid,request.data?.payload);
+        if(action==="detectPartnerCardRecovery")return await detectPartnerCardRecovery(request.auth.uid,request.data?.payload);
+        if(action==="confirmPartnerCardRecovery")return await confirmPartnerCardRecovery(request.auth.uid,request.data?.payload,device.id);
+        if(action==="fetchPartnerCardRecovery")return await fetchPartnerCardRecovery(request.auth.uid,request.data?.payload);
         if(action==="previewMemberCardReturn")return await previewMemberCardReturnForUser(request.auth.uid,request.data?.payload);
         if(action==="createMemberCardReturnJob")return await createMemberCardReturnJobForUser(request.auth.uid,request.data?.payload,device.id);
         if(action==="fetchMemberCardReturnJob")return await fetchMemberCardReturnJobForUser(request.auth.uid,request.data?.payload);

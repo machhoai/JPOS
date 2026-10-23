@@ -197,6 +197,22 @@ test("a different shop account sharing MID cannot send while the first worker ow
   release(); await first;
   assert.equal(documents.get(changePath(ids[1])).status, "PENDING");
 });
+test("shared reads seed a legacy profile without replacing its creation store", async () => {
+  reset();
+  const stored=documents.get(profilePath);delete stored.profileRevision;
+  documents.set(profilePath,{...stored,warehouseId:'creation-store'});
+  const remote={uid:'account',mid:'member',memberCode:'CARD',...base,shopId:1,balances:{}};
+  const seeded=await service.seedMemberEditProfile(remote,'store','user');
+  assert.equal(seeded.warehouseId,'creation-store');
+  assert.equal(documents.get(profilePath).warehouseId,'creation-store');
+});
+test("profile history can be read from an authorized store different from the creation store", async () => {
+  reset();await save(0,{fullName:'Tên đã sửa'});
+  documents.set(profilePath,{...documents.get(profilePath),warehouseId:'creation-store'});
+  const result=await service.fetchMemberProfileHistoryForUser('user',{uid:'account',shopId:1,warehouseId:'store'});
+  assert.equal(result.profile.warehouseId,'creation-store');
+  assert.equal(result.changes.length,1);
+});
 test("a forged warehouse or member scope cannot write a local change", async () => {
   reset();
   await assert.rejects(service.updateMemberProfileLocally("user", { ...base, fullName: "B", uid: "account", operationId: ids[0], baseRevision: 0, warehouseId: "other-store", shopId: 1 }, "device"), /không có quyền/);

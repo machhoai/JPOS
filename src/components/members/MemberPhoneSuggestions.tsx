@@ -18,7 +18,7 @@ export default function MemberPhoneSuggestions({items,loading,error,valid,disabl
     {!!items.length && <ul aria-label="Gợi ý số điện thoại" className="max-h-64 overflow-y-auto rounded-2xl border border-[var(--color-border-subtle)] bg-white shadow-sm">
       {items.map(item => <li key={item.uid}>
         <button type="button" disabled={disabled} onClick={()=>onSelect(item)} className="flex min-h-14 w-full items-center justify-between gap-3 border-b border-neutral-100 px-4 py-3 text-left transition last:border-b-0 hover:bg-orange-50 focus-visible:bg-orange-50 disabled:opacity-50">
-          <span><span className="block font-bold text-[var(--color-text-primary)]">{item.phone}</span><span className="block text-sm text-[var(--color-text-secondary)]">{item.fullName || "Khách chưa cung cấp họ tên"}</span></span>
+          <span><span className="block font-bold text-[var(--color-text-primary)]">{item.phone}</span><span className="block text-sm text-[var(--color-text-secondary)]">{item.fullName || "Khách chưa cung cấp họ tên"}</span>{item.state === "READY" && item.isEnabled === false && <span className="mt-1 block text-xs font-bold text-red-700">Trạng thái: Đang tắt</span>}</span>
           <span className="text-xs font-semibold text-[var(--color-accent)]">{item.state === "READY" ? "Tra cứu" : item.state === "NEEDS_REVIEW" ? "Kiểm tra đăng ký" : "Phục hồi đăng ký"}</span>
         </button>
       </li>)}

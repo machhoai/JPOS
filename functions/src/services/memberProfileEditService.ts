@@ -33,7 +33,7 @@ export async function seedMemberEditProfile(remote: MemberProfile, warehouseId: 
   return db.runTransaction(async tx => {
     const snapshot = await tx.get(ref);
     const existing = snapshot.data() as StoredMemberProfile | undefined;
-    if (existing && ((existing.warehouseId !== warehouseId && existing.hkImportUnassigned !== true) || existing.shopId !== remote.shopId)) {
+    if (existing && existing.shopId !== remote.shopId) {
       throw new HttpsError("permission-denied", "Tài khoản thành viên chưa được xác minh tại điểm bán này.");
     }
     if (existing?.profileRevision !== undefined) {
@@ -46,7 +46,8 @@ export async function seedMemberEditProfile(remote: MemberProfile, warehouseId: 
       ...(existing?.hkImportUnassigned ? { hkImportUnassigned: false } : {}),
       schemaVersion: 1, remoteUid: remote.uid, mid: remote.mid ?? existing?.mid ?? null,
       memberCode: remote.memberCode ?? existing?.memberCode ?? null,
-      ...editableProfile(remote), shopId: remote.shopId!, warehouseId,
+      ...editableProfile(remote), shopId: remote.shopId!,
+      warehouseId: existing && !existing.hkImportUnassigned ? existing.warehouseId : warehouseId,
       createdBy: existing?.createdBy ?? userId, updatedBy: existing?.updatedBy ?? userId,
       createdAt: existing?.createdAt ?? now, updatedAt: existing?.updatedAt ?? now,
       lastRemoteSyncAt: existing?.lastRemoteSyncAt ?? now,
@@ -138,8 +139,9 @@ export async function fetchMemberProfileHistoryForUser(userId: string, data: unk
     throw new HttpsError("invalid-argument", "Thông tin tra cứu lịch sử không hợp lệ.");
   }
   await assertMemberEditAccess(userId, input.warehouseId, input.summaryOnly ? "pos.members.edit" : "pos.members.history");
+  assertMemberShopScope(Number(input.shopId));
   const profile = await getStoredMemberProfile(input.uid);
-  if (!profile || profile.warehouseId !== input.warehouseId || profile.shopId !== input.shopId) throw new HttpsError("permission-denied", "Hồ sơ không thuộc điểm bán này.");
+  if (!profile || profile.shopId !== input.shopId) throw new HttpsError("permission-denied", "Hồ sơ không thuộc hệ thống thành viên này.");
   if (input.summaryOnly) return { profile, changes: [], nextCursor: null };
   let query = changesRef().where("memberUid", "==", input.uid).orderBy("revision", "desc");
   if (input.beforeRevision !== undefined) {

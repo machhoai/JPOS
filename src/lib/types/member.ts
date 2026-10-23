@@ -35,6 +35,7 @@ export interface MemberBalances {
 }
 
 export interface MemberProfile extends MemberProfileEditMetadata {
+  isEnabled?: boolean | null;
   uid: string;
   mid: string | null;
   memberCode: string | null;

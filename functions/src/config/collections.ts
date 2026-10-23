@@ -36,6 +36,7 @@ export const POS_COLLECTIONS = {
   members: "pos_members",
   memberRegistrations: "pos_member_registration_requests",
   memberCardReturns: "pos_member_card_return_jobs",
+  partnerCardRecoveries: "pos_partner_card_recoveries",
   memberCardLocks: "pos_member_card_locks",
   memberProfileChanges: "pos_member_profile_changes",
   memberProfileLocks: "pos_member_profile_locks",

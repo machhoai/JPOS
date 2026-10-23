@@ -1,6 +1,7 @@
 "use client";
 import { MonitorCheck, SearchX } from "lucide-react";
 import MembersPageHeader from "@/components/members/MembersPageHeader";
+import PartnerCardRecoveryDialog from "@/components/members/PartnerCardRecoveryDialog";
 import Sidebar from "@/components/layout/Sidebar";
 import MemberLookupPanel from "@/components/members/MemberLookupPanel";
 import MemberDetailsPanel from "@/components/members/MemberDetailsPanel";
@@ -155,6 +156,7 @@ if (auth.isLoading || !auth.user || !auth.userDoc) {
                     </div>
                 </div>
             </main>
+            {controller.partnerRecovery && <PartnerCardRecoveryDialog key={`${auth.effectiveWarehouseId}:${controller.partnerRecovery.view.id}`} match={controller.partnerRecovery} onClose={()=>controller.setPartnerRecovery(null)} onOpenMember={view=>{controller.setPartnerRecovery(null);handleOperationChange("LOOKUP");handleModeChange("PHONE");void controller.handleSuggestionSelect({uid:view.uid,phone:view.phone,fullName:view.fullName,state:"READY",isEnabled:true});}}/>}
             {operation === "COMPENSATION" && member && compensation.isConfirmOpen ? (
                 <MemberCompensationConfirmModal
                     member={member}
