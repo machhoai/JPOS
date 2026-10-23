@@ -87,3 +87,6 @@ Khóa chỉ phối hợp các luồng JPOS; không kiểm soát công cụ ngoà
 
 Ảnh và kết quả: `.firebase/partner-card-recovery-ui-qa/`.
 Nhật ký seed/kiểm tra trigger: `.firebase/partner-card-recovery/` (đều ignored).
+
+Cập nhật phát hành 23/10/2026: JPOS 2.0.3 đã phát hành và xác thực bộ cài,
+chữ ký, manifest updater; xem [kết quả phát hành](release-2.0.3.md).
