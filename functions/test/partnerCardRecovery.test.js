@@ -9,7 +9,7 @@ const service=require('../lib/services/partnerCardRecoveryService');
 const {processPartnerCardRecovery}=require('../lib/member/partnerCardRecoveryWorker');
 const {importShard}=require('../lib/member/memberImportPolicy');
 process.env.HK_API_SHOP_ID='1';process.env.HK_API_KEY='test-preview-secret';
-let docs,enabled,attached,requests,permission,foreign,price,failLocal,loseAttach,initialWrites,slots;
+let docs,enabled,attached,requests,permission,foreign,price,failLocal,loseAttach,initialWrites,slots,currentOwner,ownerLookupError,ownerLookupData;
 const id=policy.recoveryId(1,'CARD'),recordPath=`pos_partner_card_recoveries/${id}`;
 const input={shopId:1,warehouseId:'store',memberCode:'CARD',cardUuid:'0011223344556677'};
 const seed={schemaVersion:1,shopId:1,memberCode:'CARD',cardUuid:input.cardUuid,uid:'account',mid:'member',phone:'270826001',fullName:'Đối tác',creationWarehouseId:'creation-store',history:[{label:'Gỡ liên kết thẻ',at:'2026-10-23T00:00:00Z'}],state:'AVAILABLE'};
@@ -22,10 +22,10 @@ db.runTransaction=async work=>{const writes=[];const tx={get:ref=>ref.get(),getA
  for(const[k,ref,data]of writes){if(k==='delete')docs.delete(ref.path);else docs.set(ref.path,structuredClone(k==='update'?{...docs.get(ref.path),...data}:data));}return result;};
 auth.getPosAuthSession=async()=>({warehouses:[{id:'store'}],permissions:{global:permission?{'pos.members.restore_card':true}:{}}});
 function details(){return{memberAcctId:'account',memberId:'member',shopId:1,memberLevelType:1,isEnabled:enabled,phone:seed.phone,realName:seed.fullName,memberLevelId:'level',memberCardOutputs:attached?[{memberCode:'CARD',icCard:input.cardUuid}]:[]};}
-cashier.cashierRequest=async r=>{requests.push(r);if(r.path.endsWith('/getdetails'))return{success:true,data:details()};if(r.path.endsWith('/take/check')){if(foreign)throw new cashier.MemberCardIssueError('HK_OPERATION_REJECTED','Thẻ đã có chủ khác');return{success:true,data:'dynamic'};}if(r.path.endsWith('/take/info'))return{success:true,data:{surplusQty:slots,maxReceiveCard:5,takeCardNum:0}};if(r.path.endsWith('/take/confirm')){attached=true;if(loseAttach){loseAttach=false;throw Error('Response lost');}return{success:true,data:null};}if(r.path.endsWith('/take/deposit'))return{success:true,data:[{amount:price,storeCategory:1}]};if(r.path.endsWith('/otherorder/getitems'))return{success:true,data:[{id:'card-item',taxRate:0}]};if(r.path.endsWith('/getmethods'))return{success:true,data:[{methodCode:'CashPaymentExecutor',methodId:'cash'}]};if(r.path.endsWith('/order/create'))return{success:true,data:'ORDER'};if(r.path.endsWith('/order/refresh'))return{success:true,data:{status:3}};if(r.path.endsWith('/order/complete')){attached=true;return{success:true,data:null};}if(r.method==='POST')return{success:true,data:null};throw Error('Unexpected path '+r.path);};
+cashier.cashierRequest=async r=>{requests.push(r);if(r.path.endsWith('/getmember/list')){if(ownerLookupError)throw ownerLookupError;return{success:true,data:ownerLookupData!==undefined?ownerLookupData:currentOwner?[{memberAcctId:currentOwner,memberCode:'CARD'}]:[]};}if(r.path.endsWith('/getdetails'))return{success:true,data:details()};if(r.path.endsWith('/take/check')){if(foreign)throw new cashier.MemberCardIssueError('HK_OPERATION_REJECTED','Thẻ đã có chủ khác');return{success:true,data:'dynamic'};}if(r.path.endsWith('/take/info'))return{success:true,data:{surplusQty:slots,maxReceiveCard:5,takeCardNum:0}};if(r.path.endsWith('/take/confirm')){attached=true;if(loseAttach){loseAttach=false;throw Error('Response lost');}return{success:true,data:null};}if(r.path.endsWith('/take/deposit'))return{success:true,data:[{amount:price,storeCategory:1}]};if(r.path.endsWith('/otherorder/getitems'))return{success:true,data:[{id:'card-item',taxRate:0}]};if(r.path.endsWith('/getmethods'))return{success:true,data:[{methodCode:'CashPaymentExecutor',methodId:'cash'}]};if(r.path.endsWith('/order/create'))return{success:true,data:'ORDER'};if(r.path.endsWith('/order/refresh'))return{success:true,data:{status:3}};if(r.path.endsWith('/order/complete')){attached=true;return{success:true,data:null};}if(r.method==='POST')return{success:true,data:null};throw Error('Unexpected path '+r.path);};
 remote.enableRecoveredMember=async(r,value=true)=>{requests.push({path:'switch-status',enabled:value});enabled=value;};
 hk.fetchRemoteMemberList=async()=>({success:true,data:[{memberAcctId:'account',memberId:'member',shopId:1,phone:seed.phone,isEnabled:enabled,memberCardList:attached?[{memberCode:'CARD',icCard:input.cardUuid}]:[]}]});
-function reset(){slots=1;permission=true;enabled=false;attached=false;requests=[];foreign=false;price=0;failLocal=false;loseAttach=false;
+function reset(){currentOwner=null;ownerLookupError=null;ownerLookupData=undefined;slots=1;permission=true;enabled=false;attached=false;requests=[];foreign=false;price=0;failLocal=false;loseAttach=false;
  docs=new Map([[recordPath,structuredClone(seed)],['pos_members/account',{remoteUid:'account',shopId:1,warehouseId:'creation-store',memberCode:null,fullName:'Tên giữ nguyên',custom:'keep'}],[`pos_member_import_state/1-shard-${importShard('account')}`,{hashes:{other:'keep'}}]]);initialWrites=structuredClone([...docs]);}
 async function queue(){const {recovery}=await service.previewPartnerCardRecovery('actor',input);return service.confirmPartnerCardRecovery('actor',{...input,previewToken:recovery.previewToken},'device');}
 test('preview only matches enrolled code and chip, shows history, and never mutates',async()=>{reset();const p=await service.previewPartnerCardRecovery('actor',input);assert.equal(p.recovery.isEnabled,false);assert.equal(p.recovery.history.length,1);assert.ok(p.recovery.previewToken);assert.deepEqual([...docs],initialWrites);assert.equal(requests.filter(r=>r.method==='POST').length,0);await assert.rejects(()=>service.previewPartnerCardRecovery('actor',{...input,cardUuid:'AABBCCDDEEFF0011'}));await assert.rejects(()=>service.previewPartnerCardRecovery('actor',{...input,memberCode:'OTHER'}));});
@@ -42,5 +42,36 @@ test('zero remaining slots uses the verified zero-value purchase branch and jour
 test('nonzero card price blocks recovery before enabling the account or creating an order',async()=>{reset();slots=0;price=10000;await queue();await processPartnerCardRecovery(id);assert.equal(docs.get(recordPath).state,'NEEDS_REVIEW');assert.equal(enabled,false);assert.equal(requests.filter(r=>r.method==='POST').length,0);});
 test('normal reader detection returns null for unrelated cards without HK or restore permission',async()=>{reset();permission=false;const r=await service.detectPartnerCardRecovery('actor',{...input,memberCode:'OTHER'});assert.equal(r.recovery,null);assert.equal(requests.length,0);assert.deepEqual([...docs],initialWrites);});
 test('normal reader detection prepares an eligible recovery without any mutation',async()=>{reset();const r=await service.detectPartnerCardRecovery('actor',input);assert.equal(r.recovery.uid,seed.uid);assert.equal(r.recovery.canConfirm,true);assert.ok(r.recovery.previewToken);assert.deepEqual([...docs],initialWrites);});
-test('eligible cards show history but no confirmation for an employee without restore permission',async()=>{reset();permission=false;const r=await service.detectPartnerCardRecovery('actor',input);assert.equal(r.recovery.canConfirm,false);assert.equal(r.recovery.previewToken,undefined);assert.equal(r.recovery.history.length,1);assert.equal(requests.length,0);});
+test('eligible cards show history but no confirmation for an employee without restore permission',async()=>{reset();permission=false;const r=await service.detectPartnerCardRecovery('actor',input);assert.equal(r.recovery.canConfirm,false);assert.equal(r.recovery.previewToken,undefined);assert.equal(r.recovery.history.length,1);assert.equal(requests.length,1);assert.ok(requests[0].path.endsWith('/getmember/list'));});
 test('detection rejects chip mismatch and unauthorized current store',async()=>{reset();await assert.rejects(()=>service.detectPartnerCardRecovery('actor',{...input,cardUuid:'AABBCCDDEEFF0011'}));await assert.rejects(()=>service.detectPartnerCardRecovery('actor',{...input,warehouseId:'unauthorized'}));assert.equal(requests.length,0);});
+
+test('reassigned enrolled cards use normal lookup for every ledger state and permission',async()=>{
+ for(const state of ['AVAILABLE','QUEUED','RUNNING','NEEDS_REVIEW','COMPLETED'])for(const allowed of [true,false]){
+  reset();permission=allowed;currentOwner='new-account';docs.set(recordPath,{...seed,state});const before=structuredClone([...docs]);
+  const result=await service.detectPartnerCardRecovery('actor',input);
+  assert.equal(result.recovery,null);assert.deepEqual([...docs],before);
+  assert.equal(requests.length,1);assert.deepEqual(requests[0].body,{keywords:'CARD',isReadCard:true});
+ }
+});
+test('a card already linked to its original member also uses normal lookup',async()=>{
+ reset();currentOwner=seed.uid;attached=true;enabled=true;
+ assert.equal((await service.detectPartnerCardRecovery('actor',input)).recovery,null);
+ assert.equal(requests.length,1);
+});
+test('confirmed missing HK member still offers recovery',async()=>{
+ reset();ownerLookupError=new cashier.MemberCardIssueError('HK_OPERATION_REJECTED','Không tìm thấy thông tin thành viên');
+ assert.equal((await service.detectPartnerCardRecovery('actor',input)).recovery.canConfirm,true);
+ assert.deepEqual([...docs],initialWrites);
+});
+test('failed or malformed ownership checks never offer recovery',async()=>{
+ for(const code of ['HK_UNAVAILABLE','HK_OPERATION_REJECTED']){
+  reset();ownerLookupError=new cashier.MemberCardIssueError(code,'Lookup failed');
+  await assert.rejects(()=>service.detectPartnerCardRecovery('actor',input));
+  assert.equal(requests.length,1);assert.deepEqual([...docs],initialWrites);
+ }
+ for(const invalid of [null,{},[{}],[{memberAcctId:''}]]){
+  reset();ownerLookupData=invalid;
+  await assert.rejects(()=>service.detectPartnerCardRecovery('actor',input));
+  assert.equal(requests.length,1);assert.deepEqual([...docs],initialWrites);
+ }
+});

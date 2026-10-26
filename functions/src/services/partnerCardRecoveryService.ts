@@ -3,7 +3,7 @@ import { assertWarehouseAccess } from "../member/functions";
 import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { assertMemberEditAccess, assertMemberShopScope } from "./memberProfileEditService";
-import { cashierRequest } from "./joyworldMemberCardService";
+import { cashierRequest, MemberCardIssueError } from "./joyworldMemberCardService";
 import { cardLockRef, cardMemberLockRef } from "./memberCardLinkLocks";
 import { recoveryInput, recoveryId, assertRecoveryCard, assertRecoveryOwner, recoveryPreviewToken, assertRecoveryPreview } from "./partnerCardRecoveryPolicy";
 import type { PartnerCardRecovery, PartnerCardRecoveryView } from "../types/partnerCardRecovery";
@@ -42,7 +42,23 @@ async function previewKnownPartnerCard(actor: string, input: ReturnType<typeof r
     isEnabled: state.enabled, points: Number(details.coinBal2 ?? 0), canConfirm: true, dynamicSerialNo,
     previewToken: recoveryPreviewToken(actor, input, r.uid) } };
 }
-/** Normal reader flow: one targeted eligibility read; unrelated cards use normal lookup. */
+async function isCardCurrentlyLinked(shopId: number, memberCode: string): Promise<boolean> {
+  let response;
+  try {
+    response = await cashierRequest({ shopId, path: "/member/cashier/member/getmember/list",
+      method: "POST", body: { keywords: memberCode, isReadCard: true } });
+  } catch (error) {
+    if (error instanceof MemberCardIssueError && error.code === "HK_OPERATION_REJECTED" &&
+      /^(Không tìm thấy thông tin thành viên|未找到会员信息|没有找到会员信息|Member information not found)\.?$/i.test(error.message.trim())) return false;
+    throw error;
+  }
+  if (!Array.isArray(response.data) || response.data.some(entry =>
+    !entry || typeof entry.memberAcctId !== "string" || !entry.memberAcctId.trim())) {
+    throw new HttpsError("unavailable", "HK chưa xác nhận được chủ thẻ hiện tại. Vui lòng đọc lại thẻ.");
+  }
+  return response.data.length > 0;
+}
+/** One eligibility read; only enrolled cards need a fresh HK ownership check. */
 export async function detectPartnerCardRecovery(actor: string, data: unknown) {
   const input = recoveryInput(data); assertMemberShopScope(input.shopId);
   await assertWarehouseAccess(actor, input.warehouseId);
@@ -50,6 +66,9 @@ export async function detectPartnerCardRecovery(actor: string, data: unknown) {
   const r = (await recoveryRef(id).get()).data() as PartnerCardRecovery | undefined;
   if (!r) return { recovery: null };
   assertRecoveryCard(r, input);
+  // The historical ledger does not own the card: a current HK link takes precedence,
+  // including links created outside JPOS or after a completed recovery.
+  if (await isCardCurrentlyLinked(input.shopId, input.memberCode)) return { recovery: null };
   try { await assertMemberEditAccess(actor, input.warehouseId, "pos.members.restore_card"); }
   catch (error) {
     if (!(error instanceof HttpsError) || error.code !== "permission-denied") throw error;

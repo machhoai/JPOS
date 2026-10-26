@@ -90,3 +90,19 @@ Nhật ký seed/kiểm tra trigger: `.firebase/partner-card-recovery/` (đều i
 
 Cập nhật phát hành 23/10/2026: JPOS 2.0.3 đã phát hành và xác thực bộ cài,
 chữ ký, manifest updater; xem [kết quả phát hành](release-2.0.3.md).
+
+## Điều chỉnh nhận diện ngày 26/10/2026
+
+Sau khi khớp mã thẻ/chip trong ledger, detector tra cứu chủ thẻ hiện tại qua
+HK cashier `getmember/list` với `isReadCard: true`. Nếu đã có thành viên đang
+liên kết thẻ, trả `recovery: null` để JPOS tiếp tục tra cứu hồ sơ hiện tại.
+Điều kiện này áp dụng trước kiểm tra quyền phục hồi và mọi trạng thái ledger,
+kể cả COMPLETED; lịch sử trong danh sách 600 thẻ không quyết định chủ hiện tại.
+Chỉ kết quả không có chủ thẻ mới tiếp tục luồng modal phục hồi cũ. Lỗi mạng,
+response thiếu dữ liệu hoặc lỗi HK khác không được coi là thẻ còn trống.
+
+Không thêm lượt đọc/ghi Firestore vào detector: vẫn một lần đọc ledger theo mã
+thẻ, thêm một truy vấn HK chỉ khi mã thẻ/chip khớp danh sách. Worker xác nhận và
+đối chiếu lại liên kết trước mutation vẫn giữ nguyên. 228/228 tests Functions
+đạt, gồm chủ mới ở mọi trạng thái ledger, không có quyền phục hồi, thẻ đã khôi
+phục, thẻ trống và lỗi tra cứu. Thay đổi backend áp dụng với JPOS 2.0.3 hiện có.
