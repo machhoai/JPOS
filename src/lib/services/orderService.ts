@@ -150,6 +150,7 @@ export interface OrderHistoryResult {
 }
 
 export interface OrderHistoryQuery {
+  accessKey?: string;
   warehouseId: string;
   startAt: string;
   endAt: string;
@@ -162,6 +163,7 @@ export interface CloseoutOrderQuery {
   endAt: string;
   warehouseId: string;
   scope: CloseoutAccountScope;
+  purpose?: "VIEW" | "PRINT";
 }
 
 export async function fetchOrderHistory(

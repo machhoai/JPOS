@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IoAlbums, IoDesktop, IoDocument, IoHome, IoPeople, IoSettings, IoTicket, IoTime } from "react-icons/io5";
 import { useUpdater } from "@/features/updater/components/UpdateProvider";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { ORDER_HISTORY_READ_PERMISSION } from "@/lib/auth/permissions";
+import { ORDER_HISTORY_READ_PERMISSION, ORDER_HISTORY_OWN_TODAY_PERMISSION, CLOSEOUT_READ_ALL_PERMISSION, CLOSEOUT_READ_OWN_TODAY_PERMISSION } from "@/lib/auth/permissions";
 import { usePayOSReconciliationStore } from "@/features/payments/store/usePayOSReconciliationStore";
 
 interface SidebarProps {
@@ -125,8 +125,12 @@ export default function Sidebar({ onLogout }: SidebarProps) {
 
                 <nav className="flex flex-col items-center gap-2 w-full" aria-label="Điều hướng chính">
                     {NAV_ITEMS.filter((item) =>
-                        item.href !== "/orders" ||
-                        hasPermission(ORDER_HISTORY_READ_PERMISSION, effectiveWarehouseId || undefined)
+                        (item.href !== "/orders" ||
+                        hasPermission(ORDER_HISTORY_READ_PERMISSION, effectiveWarehouseId || undefined) ||
+                        hasPermission(ORDER_HISTORY_OWN_TODAY_PERMISSION, effectiveWarehouseId || undefined)) &&
+                        (item.href !== "/shift-close" ||
+                        hasPermission(CLOSEOUT_READ_ALL_PERMISSION, effectiveWarehouseId || undefined) ||
+                        hasPermission(CLOSEOUT_READ_OWN_TODAY_PERMISSION, effectiveWarehouseId || undefined))
                     ).map((item) => {
                         const isActive = item.href === "/"
                             ? pathname === "/"

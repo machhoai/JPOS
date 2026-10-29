@@ -37,6 +37,7 @@ import {
   voucherFieldsForOrder,
 } from "../services/voucherService";
 import { getCurrentVietnamDayRange } from "./orderHistoryRange";
+import { canAccessCloseout, canReadOrder, canReadOrderRange, isOwnOrderToday } from "./reportAccessPolicy";
 
 interface OrderItemInput {
   goodsId: string;
@@ -69,6 +70,7 @@ interface CloseoutOrderListInput {
   endAt: string;
   warehouseId: string;
   scope: "CURRENT_USER" | "ALL_USERS";
+  purpose?: "VIEW" | "PRINT";
 }
 
 interface LatestOrderInput {
@@ -897,10 +899,13 @@ export async function getPosOrderForUser(
   const warehouseIds = new Set(
     session.warehouses.map((warehouse) => warehouse.id),
   );
+  // The sales screen also loads the just-created receipt through this endpoint.
+  // Keep that workflow without granting historical or cross-employee access.
+  const ownSaleReceipt = hasScopedPermission(session.permissions, "pos.sales.create", order.warehouseId) &&
+    isOwnOrderToday(userId, order);
   if (
-    order.createdBy !== userId &&
-    (!warehouseIds.has(order.warehouseId) ||
-      !hasScopedPermission(session.permissions, "pos.orders.read", order.warehouseId))
+    !warehouseIds.has(order.warehouseId) ||
+    (!canReadOrder(session.permissions, order.warehouseId, userId, order) && !ownSaleReceipt)
   ) {
     throw new HttpsError(
       "permission-denied",
@@ -949,13 +954,6 @@ async function loadAccessibleOrders(
   requestedLimit: number,
 ): Promise<PosOrder[]> {
   const session = await getPosAuthSession(userId);
-  const warehouseIds = new Set(
-    session.warehouses
-      .filter((warehouse) =>
-        hasScopedPermission(session.permissions, "pos.orders.read", warehouse.id),
-      )
-      .map((warehouse) => warehouse.id),
-  );
   const snapshot = await db
     .collection(POS_COLLECTIONS.orders)
     .orderBy("createdAt", "desc")
@@ -966,8 +964,9 @@ async function loadAccessibleOrders(
     .map((document) => document.data() as PosOrder)
     .filter(
       (order) =>
-        order.createdBy === userId ||
-        warehouseIds.has(order.warehouseId),
+        session.warehouses.some((warehouse) => warehouse.id === order.warehouseId) &&
+        ((order.createdBy === userId && order.status === "DRAFT") ||
+          canReadOrder(session.permissions, order.warehouseId, userId, order)),
     );
 }
 
@@ -987,7 +986,7 @@ async function loadAccessibleOrdersForWarehouse(
       "Bạn không có quyền xem đơn hàng tại cửa hàng này.",
     );
   }
-  if (!hasScopedPermission(session.permissions, "pos.orders.read", warehouseId)) {
+  if (!canReadOrderRange(session.permissions, warehouseId, { startAt, endAt })) {
     throw new HttpsError(
       "permission-denied",
       "Bạn không có quyền xem lịch sử đơn hàng tại cửa hàng này.",
@@ -1011,7 +1010,8 @@ async function loadAccessibleOrdersForWarehouse(
 
   return snapshot.docs
     .map((document) => document.data() as PosOrder)
-    .filter((order) => order.warehouseId === warehouseId);
+    .filter((order) => order.warehouseId === warehouseId &&
+      canReadOrder(session.permissions, warehouseId, userId, order));
 }
 
 export async function listPosOrdersForUser(
@@ -1086,6 +1086,9 @@ function validateCloseoutOrderListInput(data: unknown): CloseoutOrderListInput {
   if (!warehouseId) {
     throw new HttpsError("invalid-argument", "Điểm bán không hợp lệ.");
   }
+  if (input.purpose !== undefined && input.purpose !== "VIEW" && input.purpose !== "PRINT") {
+    throw new HttpsError("invalid-argument", "Mục đích báo cáo không hợp lệ.");
+  }
   if (input.scope !== "CURRENT_USER" && input.scope !== "ALL_USERS") {
     throw new HttpsError("invalid-argument", "Phạm vi tài khoản không hợp lệ.");
   }
@@ -1095,6 +1098,7 @@ function validateCloseoutOrderListInput(data: unknown): CloseoutOrderListInput {
     endAt: new Date(endTime).toISOString(),
     warehouseId,
     scope: input.scope,
+    purpose: input.purpose ?? "VIEW",
   };
 }
 
@@ -1111,11 +1115,11 @@ export async function listCloseoutOrdersForUser(
   const session = await getPosAuthSession(userId);
   if (
     !session.warehouses.some((warehouse) => warehouse.id === input.warehouseId) ||
-    !hasScopedPermission(session.permissions, "pos.shift.close", input.warehouseId)
+    !canAccessCloseout(session.permissions, input.warehouseId, input, input.purpose ?? "VIEW")
   ) {
     throw new HttpsError(
       "permission-denied",
-      "Bạn không có quyền xem báo cáo tại điểm bán này.",
+      "Bạn không có quyền xem hoặc in báo cáo trong phạm vi đã chọn tại điểm bán này.",
     );
   }
 

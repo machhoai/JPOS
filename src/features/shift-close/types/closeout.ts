@@ -35,6 +35,7 @@ export interface CloseoutReport {
 }
 
 export interface CloseoutReportMeta {
+  timeZone?: string;
   periodMode: CloseoutPeriodMode;
   accountScope: CloseoutAccountScope;
   startAt: string;

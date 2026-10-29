@@ -7,7 +7,7 @@
 import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { useOrderHistoryStore } from "@/lib/stores/useOrderHistoryStore";
+import { useOrderHistoryStore, orderHistoryQueryKey } from "@/lib/stores/useOrderHistoryStore";
 import type { PosOrder } from "@/lib/types/order";
 import Sidebar from "@/components/layout/Sidebar";
 import OrderFilters, { DEFAULT_FILTERS, type OrderFilterState } from "@/components/orders/OrderFilters";
@@ -24,7 +24,8 @@ import {
 import { retryOrderSync } from "@/lib/services/orderService";
 import { showError, showPromise } from "@/lib/utils/toast";
 import { useLuckyDrawSettingsSync } from "@/features/lucky-draw/hooks/useLuckyDrawSettingsSync";
-import { ORDER_HISTORY_READ_PERMISSION } from "@/lib/auth/permissions";
+import { useVietnamToday } from "@/lib/hooks/useVietnamToday";
+import { ORDER_HISTORY_READ_PERMISSION, ORDER_HISTORY_OWN_TODAY_PERMISSION } from "@/lib/auth/permissions";
 import {
     formatOrderHistoryDate,
     getVietnamDateInputValue,
@@ -61,21 +62,27 @@ export default function OrderHistoryPage() {
     }, []);
 
     // Zustand store
-    const orders = useOrderHistoryStore((state) =>
+    const storedOrders = useOrderHistoryStore((state) =>
         Array.isArray(state.orders) ? state.orders : EMPTY_ORDERS
     );
     const isLoadingOrders = useOrderHistoryStore((state) => state.isLoading);
     const orderError = useOrderHistoryStore((state) => state.error);
     const fetchOrders = useOrderHistoryStore((state) => state.fetchOrders);
-    const canReadOrderHistory = hasPermission(
+    const today = useVietnamToday();
+    const canReadAllOrders = hasPermission(
         ORDER_HISTORY_READ_PERMISSION,
         effectiveWarehouseId || undefined,
     );
+    const canReadOrderHistory = canReadAllOrders || hasPermission(ORDER_HISTORY_OWN_TODAY_PERMISSION, effectiveWarehouseId || undefined);
+    const reportDate = canReadAllOrders ? selectedDate : today;
     const historyQuery = useMemo(() => {
         if (!effectiveWarehouseId) return null;
-        const range = getOrderHistoryDayRange(selectedDate);
-        return { warehouseId: effectiveWarehouseId, ...range };
-    }, [effectiveWarehouseId, selectedDate]);
+        const range = getOrderHistoryDayRange(reportDate);
+        return { warehouseId: effectiveWarehouseId, ...range, accessKey: `${user?.uid}:${canReadAllOrders ? "all" : "own"}` };
+    }, [effectiveWarehouseId, reportDate, user?.uid, canReadAllOrders]);
+    const storedQueryKey = useOrderHistoryStore((state) => state.queryKey);
+    const orders = canReadOrderHistory && historyQuery && storedQueryKey === orderHistoryQueryKey(historyQuery) ? storedOrders : EMPTY_ORDERS;
+    useEffect(() => () => useOrderHistoryStore.getState().reset(), [user?.uid, effectiveWarehouseId, canReadAllOrders, canReadOrderHistory]);
 
     // Auth guard
     useEffect(() => {
@@ -129,9 +136,9 @@ export default function OrderHistoryPage() {
 
     useEffect(() => {
         const historyState = useOrderHistoryStore.getState();
-        if (!notificationTarget || selectedDate !== notificationTarget.date || isLoadingOrders ||
+        if (!notificationTarget || reportDate !== notificationTarget.date || isLoadingOrders ||
             !historyQuery || historyState.isLoading ||
-            historyState.queryKey !== `${historyQuery.warehouseId}:${historyQuery.startAt}:${historyQuery.endAt}` ||
+            historyState.queryKey !== orderHistoryQueryKey(historyQuery) ||
             scrolledTarget.current === notificationTarget.key ||
             !filteredOrders.some((order) => order.localOrderId === notificationTarget.orderId)) return;
         const frame = requestAnimationFrame(() => {
@@ -143,7 +150,7 @@ export default function OrderHistoryPage() {
             setHighlightedOrderId(notificationTarget.orderId);
         });
         return () => cancelAnimationFrame(frame);
-    }, [notificationTarget, selectedDate, isLoadingOrders, filteredOrders, historyQuery]);
+    }, [notificationTarget, reportDate, isLoadingOrders, filteredOrders, historyQuery]);
 
     useEffect(() => {
         if (!highlightedOrderId) return;
@@ -226,7 +233,7 @@ export default function OrderHistoryPage() {
                             Chưa được cấp quyền xem lịch sử đơn
                         </h1>
                         <p className="mt-2 text-sm leading-6 text-[var(--color-text-muted)]">
-                            Tài khoản cần quyền <code>{ORDER_HISTORY_READ_PERMISSION}</code> tại cửa hàng này. Vui lòng liên hệ quản trị viên POS.
+                            Tài khoản chưa được cấp quyền xem đơn hàng tại cửa hàng này. Vui lòng liên hệ quản trị viên POS.
                         </p>
                         <button
                             type="button"
@@ -256,7 +263,7 @@ export default function OrderHistoryPage() {
                                 </h1>
                             </div>
                             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                                Theo dõi và tra cứu đơn hàng POS ngày {formatOrderHistoryDate(selectedDate)}
+                                Theo dõi và tra cứu đơn hàng POS ngày {formatOrderHistoryDate(reportDate)}
                             </p>
                         </div>
 
@@ -347,12 +354,14 @@ export default function OrderHistoryPage() {
                             </div>
                         </div>
 
+                        {!canReadAllOrders && <p className="px-3 text-sm text-[var(--color-text-muted)]">Phạm vi được cấp: đơn do tôi tạo hôm nay (giờ Việt Nam).</p>}
                         {/* Filters Bar */}
                         <div className="p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-sm">
                             <OrderFilters
                                 filters={effectiveFilters}
-                                selectedDate={selectedDate}
-                                maxDate={getVietnamDateInputValue()}
+                                selectedDate={reportDate}
+                                ownTodayOnly={!canReadAllOrders}
+                                maxDate={today}
                                 warehouseName={effectiveWarehouseName || "Chưa chọn cửa hàng"}
                                 employees={employeeOptions}
                                 onChange={setFilters}
@@ -379,7 +388,7 @@ export default function OrderHistoryPage() {
             </main>
 
             {/* Detail Modal */}
-            {selectedOrder && (
+            {selectedOrder && orders.some((order) => order.localOrderId === selectedOrder.localOrderId) && (
                 <OrderDetailModal
                     order={selectedOrder}
                     isRetrying={isRetrying}

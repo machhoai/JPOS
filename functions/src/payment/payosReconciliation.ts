@@ -8,19 +8,19 @@ import { getPosAuthSession } from "../services/posAuthService";
 import type { ActivePosDevice } from "../services/posDeviceAccessService";
 import { payosApiKeySecret, payosChecksumKeySecret, payosClientIdSecret } from "../services/payosService";
 import type { PosOrder } from "../types/order";
+import { canReadOrder, hasReportPermission } from "../order/reportAccessPolicy";
 import { listCloseoutOrdersForUser } from "../order/functions";
 import { getCurrentVietnamDayRange } from "../order/orderHistoryRange";
 import { reconcileCompletedPayOSOrder } from "./payosFunctions";
 import { confirmedPayOSAttempt, isPayOSOrder, needsPayOSReconciliation, payOSReconciliationDueAt } from "./payosReconciliationPolicy";
 
-async function authorize(userId: string, device: ActivePosDevice, permission: string) {
+async function authorize(userId: string, device: ActivePosDevice) {
   const session = await getPosAuthSession(userId);
-  const global = session.permissions.global ?? {};
-  const scoped = session.permissions[device.warehouseId] ?? {};
   if (!session.warehouses.some((warehouse) => warehouse.id === device.warehouseId) ||
-      ![global["*"], global[permission], scoped["*"], scoped[permission]].some((value) => value === true)) {
+      !["pos.orders.read", "pos.orders.read_own_today"].some((key) => hasReportPermission(session.permissions, key, device.warehouseId))) {
     throw new HttpsError("permission-denied", "Bạn không có quyền đối soát tại điểm bán này.");
   }
+  return session;
 }
 
 async function checkedOrderRef(device: ActivePosDevice, payload: { localOrderId?: unknown }) {
@@ -32,7 +32,7 @@ async function checkedOrderRef(device: ActivePosDevice, payload: { localOrderId?
   if (!snapshot.exists || snapshot.data()?.warehouseId !== device.warehouseId) {
     throw new HttpsError("permission-denied", "Đơn hàng không thuộc điểm bán của máy POS.");
   }
-  return ref;
+  return { ref, order: snapshot.data() as PosOrder };
 }
 
 function summary(order: PosOrder, userId: string) {
@@ -64,7 +64,6 @@ export async function handlePayOSReconciliation(
   userId: string, device: ActivePosDevice, action: string,
   payload: { localOrderId?: unknown; warehouseId?: unknown },
 ) {
-  await authorize(userId, device, action === "reconcile-closeout" ? "pos.shift.close" : "pos.orders.read");
   if (action === "reconcile-closeout") {
     if (payload.warehouseId !== device.warehouseId) {
       throw new HttpsError("permission-denied", "Báo cáo không thuộc điểm bán của máy POS.");
@@ -85,8 +84,12 @@ export async function handlePayOSReconciliation(
     }
     return { ...result, fetchedAt: new Date().toISOString(), reconciliationIncomplete: incomplete };
   }
+  const session = await authorize(userId, device);
   if (action === "reconcile-check" || action === "reconcile-ack") {
-    const ref = await checkedOrderRef(device, payload);
+    const { ref, order: orderForAccess } = await checkedOrderRef(device, payload);
+    if (!canReadOrder(session.permissions, device.warehouseId, userId, orderForAccess)) {
+      throw new HttpsError("permission-denied", "Bạn không có quyền xem đơn hàng này.");
+    }
     if (action === "reconcile-check") {
       const order = await reconcileCompletedPayOSOrder(ref);
       return {
@@ -116,7 +119,8 @@ export async function handlePayOSReconciliation(
   while (!page.empty) {
     for (const doc of page.docs) {
       let order = doc.data() as PosOrder;
-      if (!needsPayOSReconciliation(order)) continue;
+      if (!canReadOrder(session.permissions, device.warehouseId, userId, order) ||
+          !needsPayOSReconciliation(order)) continue;
       if (!order.payosReconciliation) order = await initialize(doc.ref);
       if (needsPayOSReconciliation(order)) pending.push({ ref: doc.ref, order });
       if (pending.length > 500) {

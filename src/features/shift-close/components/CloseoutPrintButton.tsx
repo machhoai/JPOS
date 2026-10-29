@@ -12,10 +12,11 @@ import type {
 import { showError } from "@/lib/utils/toast";
 
 interface CloseoutPrintButtonProps {
+  allowed: boolean;
   report: CloseoutReport | null;
   meta: CloseoutReportMeta | null;
   className?: string;
-  refreshBeforePrint?: () => Promise<{ report: CloseoutReport; meta: CloseoutReportMeta } | undefined>;
+  refreshBeforePrint: () => Promise<{ report: CloseoutReport; meta: CloseoutReportMeta } | undefined>;
 }
 
 async function printCloseoutReport(
@@ -71,6 +72,7 @@ async function printCloseoutReport(
 const CloseoutPrintButton: React.FC<CloseoutPrintButtonProps> = ({
   report,
   meta,
+  allowed,
   className = "",
   refreshBeforePrint,
 }) => {
@@ -78,10 +80,10 @@ const CloseoutPrintButton: React.FC<CloseoutPrintButtonProps> = ({
   const settings = useReceiptSettingsStore((state) => state.settings);
 
   const handlePrint = useCallback(async () => {
-    if (!report || !meta) return;
+    if (!allowed || !report || !meta || !refreshBeforePrint) return;
     setIsPrinting(true);
     try {
-      const latest = refreshBeforePrint ? await refreshBeforePrint() : { report, meta };
+      const latest = await refreshBeforePrint();
       if (!latest) return;
       if (latest.report.payosPendingOrders.length > 0 && !window.confirm(
         `Còn ${latest.report.payosPendingOrders.length} đơn PayOS chưa được xác nhận đã nhận tiền. Bạn đã kiểm tra danh sách và muốn in báo cáo có cảnh báo?`,
@@ -99,13 +101,13 @@ const CloseoutPrintButton: React.FC<CloseoutPrintButtonProps> = ({
     } finally {
       setIsPrinting(false);
     }
-  }, [meta, report, settings, refreshBeforePrint]);
+  }, [allowed, meta, report, settings, refreshBeforePrint]);
 
   return (
     <button
       type="button"
       onClick={() => void handlePrint()}
-      disabled={!report || !meta || isPrinting}
+      disabled={!allowed || !report || !meta || isPrinting}
       className={className}
     >
       <Printer className="size-4" aria-hidden="true" />

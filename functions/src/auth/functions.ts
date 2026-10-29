@@ -300,7 +300,7 @@ export const getPosAuthSession = onCall(
         if (action === "getCloseoutOrders") {
           return await listCloseoutOrdersForUser(
             request.auth.uid,
-            request.data?.payload,
+            { ...request.data?.payload, warehouseId: device.warehouseId },
           );
         }
         if (action === "getLatestOrder") {

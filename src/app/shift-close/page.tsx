@@ -1,6 +1,9 @@
 "use client";
 
 import DateInput from "@/components/ui/DateInput";
+import { useVietnamToday } from "@/lib/hooks/useVietnamToday";
+import { getOrderHistoryDayRange } from "@/lib/utils/orderHistoryDate";
+import { CLOSEOUT_READ_ALL_PERMISSION, CLOSEOUT_READ_OWN_TODAY_PERMISSION, CLOSEOUT_PRINT_ALL_PERMISSION, CLOSEOUT_PRINT_OWN_TODAY_PERMISSION } from "@/lib/auth/permissions";
 
 import { formatDate, formatDateTime } from "@/lib/utils/dateFormat";
 
@@ -105,6 +108,7 @@ const ShiftClosePage: React.FC = () => {
         effectiveWarehouseName,
         isLoading: authLoading,
         logout,
+        hasPermission,
     } = useAuth();
     const initialLoadKeyRef = useRef<string | null>(null);
     const [periodMode, setPeriodMode] = useState<CloseoutPeriodMode>("DAY");
@@ -116,21 +120,46 @@ const ShiftClosePage: React.FC = () => {
         return toDateTimeInput(start);
     });
     const [shiftEnd, setShiftEnd] = useState(() => toDateTimeInput(new Date()));
-    const [report, setReport] = useState<CloseoutReport | null>(null);
-    const [reportMeta, setReportMeta] = useState<CloseoutReportMeta | null>(null);
+    const [storedReport, setReport] = useState<CloseoutReport | null>(null);
+    const [storedReportMeta, setReportMeta] = useState<CloseoutReportMeta | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
+
+    const today = useVietnamToday();
+    const warehouseScope = effectiveWarehouseId || undefined;
+    const canReadAll = hasPermission(CLOSEOUT_READ_ALL_PERMISSION, warehouseScope);
+    const canRead = canReadAll || hasPermission(CLOSEOUT_READ_OWN_TODAY_PERMISSION, warehouseScope);
+    const canPrintAll = hasPermission(CLOSEOUT_PRINT_ALL_PERMISSION, warehouseScope);
+    const canPrintOwnToday = hasPermission(CLOSEOUT_PRINT_OWN_TODAY_PERMISSION, warehouseScope);
+    const activePeriodMode = canReadAll ? periodMode : "DAY";
+    const activeAccountScope = canReadAll ? accountScope : "CURRENT_USER";
+    const activeDate = canReadAll ? selectedDate : today;
+    const accessKey = `${user?.uid}:${effectiveWarehouseId}:${canRead}:${canReadAll}:${canPrintAll}:${canPrintOwnToday}:${today}`;
+    const [loadedAccessKey, setLoadedAccessKey] = useState<string | null>(null);
+    const requestIdRef = useRef(0);
+    const report = loadedAccessKey === accessKey && canRead ? storedReport : null;
+    const reportMeta = loadedAccessKey === accessKey && canRead ? storedReportMeta : null;
+    useEffect(() => {
+        initialLoadKeyRef.current = null;
+        return () => { requestIdRef.current += 1; };
+    }, [accessKey]);
+    const todayRange = getOrderHistoryDayRange(today);
+    const canPrintReport = Boolean(reportMeta && (canPrintAll || (canPrintOwnToday &&
+        reportMeta.accountScope === "CURRENT_USER" &&
+        Date.parse(reportMeta.startAt) >= Date.parse(todayRange.startAt) &&
+        Date.parse(reportMeta.endAt) <= Date.parse(todayRange.endAt))));
 
     useEffect(() => {
         if (!authLoading && (!user || !userDoc)) router.replace("/login");
     }, [authLoading, router, user, userDoc]);
 
-    const loadReport = useCallback(async () => {
-        if (!user || !userDoc || !effectiveWarehouseId) return;
+    const loadReport = useCallback(async (purpose: "VIEW" | "PRINT" = "VIEW") => {
+        if (!user || !userDoc || !effectiveWarehouseId || !canRead) return;
+        const requestId = ++requestIdRef.current;
 
         let range: ReportRange;
         try {
-            range = buildReportRange(periodMode, selectedDate, shiftStart, shiftEnd);
+            range = canReadAll ? buildReportRange(activePeriodMode, activeDate, shiftStart, shiftEnd) : getOrderHistoryDayRange(today);
         } catch (error: unknown) {
             showError("Bộ lọc chưa hợp lệ", getReportError(error));
             return;
@@ -142,20 +171,24 @@ const ShiftClosePage: React.FC = () => {
             const result = await fetchCloseoutOrders({
                 ...range,
                 warehouseId: effectiveWarehouseId,
-                scope: accountScope,
+                scope: activeAccountScope,
+                purpose,
             });
+            if (requestId !== requestIdRef.current) return;
+            setLoadedAccessKey(accessKey);
             const nextReport = buildCloseoutReport(result.orders);
             setReport(nextReport);
             if (result.reconciliationIncomplete) {
                 showWarning("Chưa kiểm tra hết các đơn PayOS", "Báo cáo vẫn liệt kê các đơn chờ đối soát. Vui lòng làm mới để tiếp tục kiểm tra.");
             }
             const nextMeta: CloseoutReportMeta = {
-                periodMode,
-                accountScope,
+                timeZone: canReadAll ? undefined : "Asia/Ho_Chi_Minh",
+                periodMode: activePeriodMode,
+                accountScope: activeAccountScope,
                 ...range,
                 warehouseName: effectiveWarehouseName || effectiveWarehouseId,
                 accountLabel:
-                    accountScope === "CURRENT_USER"
+                    activeAccountScope === "CURRENT_USER"
                         ? userDoc.full_name
                         : "Tất cả tài khoản",
                 generatedBy: userDoc.full_name,
@@ -164,6 +197,7 @@ const ShiftClosePage: React.FC = () => {
             setReportMeta(nextMeta);
             return { report: nextReport, meta: nextMeta };
         } catch (error: unknown) {
+            if (requestId !== requestIdRef.current) return;
             console.error("[Kết ca] Không thể tải báo cáo:", error);
             const message = getReportError(error);
             setLoadError(message);
@@ -171,14 +205,12 @@ const ShiftClosePage: React.FC = () => {
             setReportMeta(null);
             showError("Không thể tải báo cáo", message);
         } finally {
-            setIsLoading(false);
+            if (requestId === requestIdRef.current) setIsLoading(false);
         }
     }, [
-        accountScope,
+        activeAccountScope, activePeriodMode, activeDate, canRead, canReadAll, today, accessKey,
         effectiveWarehouseId,
         effectiveWarehouseName,
-        periodMode,
-        selectedDate,
         shiftEnd,
         shiftStart,
         user,
@@ -187,34 +219,39 @@ const ShiftClosePage: React.FC = () => {
 
     useEffect(() => {
         if (!user || !userDoc || !effectiveWarehouseId) return;
-        const loadKey = `${user.uid}:${effectiveWarehouseId}`;
+        const loadKey = accessKey;
         if (initialLoadKeyRef.current === loadKey) return;
         initialLoadKeyRef.current = loadKey;
         void loadReport();
-    }, [effectiveWarehouseId, loadReport, user, userDoc]);
+    }, [accessKey, effectiveWarehouseId, loadReport, user, userDoc]);
 
     const reportPeriodLabel = useMemo(() => {
         if (!reportMeta) return "Chưa có dữ liệu";
         if (reportMeta.periodMode === "DAY") {
-            return formatDate(reportMeta.startAt);
+            return formatDate(reportMeta.startAt, { timeZone: reportMeta.timeZone });
         }
-        return `${formatDateTime(reportMeta.startAt)} – ${formatDateTime(reportMeta.endAt)}`;
+        return `${formatDateTime(reportMeta.startAt, { timeZone: reportMeta.timeZone })} – ${formatDateTime(reportMeta.endAt, { timeZone: reportMeta.timeZone })}`;
     }, [reportMeta]);
 
     const hasPendingFilterChanges = useMemo(() => {
         if (!reportMeta) return false;
         try {
-            const range = buildReportRange(periodMode, selectedDate, shiftStart, shiftEnd);
+            const range = canReadAll ? buildReportRange(activePeriodMode, activeDate, shiftStart, shiftEnd) : getOrderHistoryDayRange(today);
             return (
-                reportMeta.periodMode !== periodMode ||
-                reportMeta.accountScope !== accountScope ||
+                reportMeta.periodMode !== activePeriodMode ||
+                reportMeta.accountScope !== activeAccountScope ||
                 reportMeta.startAt !== range.startAt ||
                 reportMeta.endAt !== range.endAt
             );
         } catch {
             return true;
         }
-    }, [accountScope, periodMode, reportMeta, selectedDate, shiftEnd, shiftStart]);
+    }, [activeAccountScope, activePeriodMode, activeDate, canReadAll, today, reportMeta, shiftEnd, shiftStart]);
+
+    if (!authLoading && user && !canRead) {
+        return <div className="flex h-screen bg-[var(--color-background)]"><Sidebar onLogout={logout} />
+            <main className="flex flex-1 items-center justify-center p-6"><p role="alert" className="rounded-xl border bg-white p-6">Bạn chưa được cấp quyền xem báo cáo kết ca tại cửa hàng này.</p></main></div>;
+    }
 
     return (
         <div className="flex h-screen bg-[var(--color-background)]">
@@ -242,9 +279,10 @@ const ShiftClosePage: React.FC = () => {
                             Làm mới
                         </button>
                         <CloseoutPrintButton
+                            allowed={canPrintReport}
                             report={hasPendingFilterChanges || isLoading ? null : report}
                             meta={hasPendingFilterChanges ? null : reportMeta}
-                            refreshBeforePrint={loadReport}
+                            refreshBeforePrint={() => loadReport("PRINT")}
                             className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#202124] px-4 text-xs font-bold text-white shadow-md transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
                         />
                     </div>
@@ -257,15 +295,15 @@ const ShiftClosePage: React.FC = () => {
                                 <fieldset>
                                     <legend className="mb-1.5 text-xs font-bold text-[var(--color-text-secondary)]">Thời gian báo cáo</legend>
                                     <div className="grid grid-cols-2 rounded-xl bg-[var(--color-background)] p-1">
-                                        <SegmentButton active={periodMode === "SHIFT"} onClick={() => setPeriodMode("SHIFT")} icon={<Clock3 className="size-4" />}>Theo ca</SegmentButton>
-                                        <SegmentButton active={periodMode === "DAY"} onClick={() => setPeriodMode("DAY")} icon={<CalendarDays className="size-4" />}>Theo ngày</SegmentButton>
+                                        <SegmentButton disabled={!canReadAll} active={activePeriodMode === "SHIFT"} onClick={() => setPeriodMode("SHIFT")} icon={<Clock3 className="size-4" />}>Theo ca</SegmentButton>
+                                        <SegmentButton active={activePeriodMode === "DAY"} onClick={() => setPeriodMode("DAY")} icon={<CalendarDays className="size-4" />}>Theo ngày</SegmentButton>
                                     </div>
                                 </fieldset>
 
-                                {periodMode === "DAY" ? (
+                                {activePeriodMode === "DAY" ? (
                                     <label className="grid gap-1.5 text-xs font-bold text-[var(--color-text-secondary)]">
                                         Chọn ngày
-                                        <DateInput type="date" value={selectedDate} onValueChange={setSelectedDate} className={fieldClassName} />
+                                        <DateInput type="date" disabled={!canReadAll} value={activeDate} onValueChange={setSelectedDate} className={fieldClassName} />
                                     </label>
                                 ) : (
                                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -277,8 +315,8 @@ const ShiftClosePage: React.FC = () => {
                                 <fieldset>
                                     <legend className="mb-1.5 text-xs font-bold text-[var(--color-text-secondary)]">Phạm vi nhân viên</legend>
                                     <div className="grid grid-cols-2 rounded-xl bg-[var(--color-background)] p-1">
-                                        <SegmentButton active={accountScope === "CURRENT_USER"} onClick={() => setAccountScope("CURRENT_USER")} icon={<UserRound className="size-4" />}>Của tôi</SegmentButton>
-                                        <SegmentButton active={accountScope === "ALL_USERS"} onClick={() => setAccountScope("ALL_USERS")} icon={<UsersRound className="size-4" />}>Tất cả</SegmentButton>
+                                        <SegmentButton active={activeAccountScope === "CURRENT_USER"} onClick={() => setAccountScope("CURRENT_USER")} icon={<UserRound className="size-4" />}>Của tôi</SegmentButton>
+                                        <SegmentButton disabled={!canReadAll} active={activeAccountScope === "ALL_USERS"} onClick={() => setAccountScope("ALL_USERS")} icon={<UsersRound className="size-4" />}>Tất cả</SegmentButton>
                                     </div>
                                 </fieldset>
 
@@ -299,8 +337,11 @@ const ShiftClosePage: React.FC = () => {
                                 <span className="flex size-9 items-center justify-center rounded-xl bg-white text-[var(--color-accent)] shadow-sm"><Store className="size-4" /></span>
                                 <div><p className="text-xs font-semibold text-orange-700">{effectiveWarehouseName || "Điểm bán"}</p><p className="text-sm font-extrabold capitalize text-[var(--color-text-primary)]">{reportPeriodLabel}</p></div>
                             </div>
-                            <div className="text-right"><p className="text-xs text-[var(--color-text-muted)]">Phạm vi</p><p className="text-sm font-bold text-[var(--color-text-primary)]">{reportMeta?.accountLabel || (accountScope === "CURRENT_USER" ? userDoc?.full_name : "Tất cả tài khoản")}</p></div>
+                            <div className="text-right"><p className="text-xs text-[var(--color-text-muted)]">Phạm vi</p><p className="text-sm font-bold text-[var(--color-text-primary)]">{reportMeta?.accountLabel || (activeAccountScope === "CURRENT_USER" ? userDoc?.full_name : "Tất cả tài khoản")}</p></div>
                         </section>
+
+                        {!canReadAll && <p className="text-sm text-[var(--color-text-muted)]">Phạm vi được cấp: báo cáo của tôi trong ngày hôm nay (giờ Việt Nam).</p>}
+                        {!canPrintReport && report && <p className="text-sm text-[var(--color-text-muted)]">Bạn chưa có quyền in cho phạm vi báo cáo này.</p>}
 
                         {hasPendingFilterChanges && (
                             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800">
@@ -330,7 +371,7 @@ const ShiftClosePage: React.FC = () => {
                                         <p>{order.operatorName} · Hoàn thành: {order.completedAt ? formatDateTime(order.completedAt) : "Chưa rõ"}</p>
                                         <p>Kiểm tra gần nhất: {order.lastCheckedAt ? formatDateTime(order.lastCheckedAt) : "Chưa kiểm tra"}</p>
                                         {order.lastError && <p className="text-red-700">{order.lastError}</p>}
-                                        <button type="button" disabled={isLoading} className="mt-2 rounded border px-3 py-1 font-semibold" onClick={() => {
+                                        <button type="button" disabled={isLoading || !(hasPermission("pos.orders.read", warehouseScope) || hasPermission("pos.orders.read_own_today", warehouseScope))} className="mt-2 rounded border px-3 py-1 font-semibold" onClick={() => {
                                             setIsLoading(true);
                                             void checkPendingPayOSOrder(order.localOrderId)
                                                 .then(() => loadReport())
@@ -401,12 +442,13 @@ const ShiftClosePage: React.FC = () => {
 interface SegmentButtonProps {
     active: boolean;
     onClick: () => void;
+    disabled?: boolean;
     icon: React.ReactNode;
     children: React.ReactNode;
 }
 
-const SegmentButton: React.FC<SegmentButtonProps> = ({ active, onClick, icon, children }) => (
-    <button type="button" onClick={onClick} className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold transition-all ${active ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"}`}>{icon}{children}</button>
+const SegmentButton: React.FC<SegmentButtonProps> = ({ active, onClick, icon, children, disabled }) => (
+    <button type="button" disabled={disabled} onClick={onClick} className={`disabled:cursor-not-allowed disabled:opacity-40 inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-bold transition-all ${active ? "bg-white text-[var(--color-accent)] shadow-sm" : "text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"}`}>{icon}{children}</button>
 );
 
 interface MetricCardProps {

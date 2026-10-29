@@ -12,6 +12,7 @@ interface OrderHistoryState {
   fetchedAt: string | null;
   queryKey: string | null;
   requestId: number;
+  reset: () => void;
   fetchOrders: (query: OrderHistoryQuery) => Promise<void>;
 }
 
@@ -23,8 +24,10 @@ export const useOrderHistoryStore = create<OrderHistoryState>((set) => ({
   queryKey: null,
   requestId: 0,
 
+  reset: () => set((state) => ({ orders: [], isLoading: false, error: null, fetchedAt: null, queryKey: null, requestId: state.requestId + 1 })),
+
   fetchOrders: async (query) => {
-    const queryKey = `${query.warehouseId}:${query.startAt}:${query.endAt}`;
+    const queryKey = orderHistoryQueryKey(query);
     let requestId = 0;
     set((state) => {
       requestId = state.requestId + 1;
@@ -47,6 +50,7 @@ export const useOrderHistoryStore = create<OrderHistoryState>((set) => ({
     } catch (error: unknown) {
       console.error("[Lịch sử đơn] Không thể tải đơn hàng:", error);
       set((state) => state.requestId === requestId ? {
+          orders: [],
           isLoading: false,
           error: "Không thể tải lịch sử đơn hàng. Vui lòng thử lại.",
         } : state);
@@ -54,3 +58,7 @@ export const useOrderHistoryStore = create<OrderHistoryState>((set) => ({
     }
   },
 }));
+
+export function orderHistoryQueryKey(query: OrderHistoryQuery): string {
+  return `${query.accessKey ?? ""}:${query.warehouseId}:${query.startAt}:${query.endAt}`;
+}

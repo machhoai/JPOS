@@ -72,8 +72,8 @@ const CloseoutReceiptDocument: React.FC<CloseoutReceiptDocumentProps> = ({
             <section style={{ display: "grid", gap: "1mm", marginTop: "3mm" }}>
                 <div style={rowStyle}><span>Điểm bán</span><span style={valueStyle}>{meta.warehouseName}</span></div>
                 <div style={rowStyle}><span>Kiểu báo cáo</span><span style={valueStyle}>{meta.periodMode === "SHIFT" ? "Theo ca" : "Theo ngày"}</span></div>
-                <div style={rowStyle}><span>Từ</span><span style={valueStyle}>{formatDateTime(meta.startAt)}</span></div>
-                <div style={rowStyle}><span>Đến</span><span style={valueStyle}>{formatDateTime(meta.endAt)}</span></div>
+                <div style={rowStyle}><span>Từ</span><span style={valueStyle}>{formatDateTime(meta.startAt, { timeZone: meta.timeZone })}</span></div>
+                <div style={rowStyle}><span>Đến</span><span style={valueStyle}>{formatDateTime(meta.endAt, { timeZone: meta.timeZone })}</span></div>
                 <div style={rowStyle}><span>Tài khoản</span><span style={valueStyle}>{meta.accountLabel}</span></div>
                 <div style={rowStyle}><span>Người in</span><span style={valueStyle}>{meta.generatedBy}</span></div>
             </section>

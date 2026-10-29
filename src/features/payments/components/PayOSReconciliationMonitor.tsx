@@ -11,15 +11,16 @@ import { buildOrderNotificationHref } from "../helpers/orderNotificationLink";
 import { usePayOSReconciliationStore } from "../store/usePayOSReconciliationStore";
 
 export default function PayOSReconciliationMonitor() {
-  const { user, effectiveWarehouseId } = useAuth();
-  return <Monitor key={`${user?.uid ?? ""}:${effectiveWarehouseId ?? ""}`} />;
+  const { user, effectiveWarehouseId, hasPermission } = useAuth();
+  const access = hasPermission("pos.orders.read", effectiveWarehouseId || undefined) ? "all" : "own";
+  return <Monitor key={`${user?.uid ?? ""}:${effectiveWarehouseId ?? ""}:${access}`} />;
 }
 
 function Monitor() {
   const { user, effectiveWarehouseId, hasPermission } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const active = Boolean(user && effectiveWarehouseId && hasPermission("pos.orders.read", effectiveWarehouseId) &&
+  const active = Boolean(user && effectiveWarehouseId && (hasPermission("pos.orders.read", effectiveWarehouseId) || hasPermission("pos.orders.read_own_today", effectiveWarehouseId)) &&
     !pathname.startsWith("/display") && !pathname.startsWith("/login") && !pathname.startsWith("/invoice"));
   const userId = user?.uid;
 
