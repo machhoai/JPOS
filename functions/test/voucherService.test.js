@@ -3,8 +3,55 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   calculateVoucherDiscount,
+  listVoucherCodeFormats,
   normalizeVoucherCode,
 } = require("../lib/services/voucherService");
+const { db } = require("../lib/config/firebase");
+
+test("lists distinct suffixes, including blank, for active campaigns enabled at the POS store", async (t) => {
+  const setting = (id, overrides = {}) => ({
+    id: `store-a__${id}`,
+    data: () => ({ campaign_id: id, enabled: true, ...overrides }),
+  });
+  const campaign = (prefix, suffix, overrides = {}) => ({
+    data: () => ({
+      prefix, suffix, status: "ACTIVE", valid_from: "2000-01-01", valid_to: "2100-01-01",
+      ...overrides,
+    }),
+  });
+  t.mock.method(db, "collection", (name) => {
+    if (name === "marketing_voucher_campaigns") return { doc: (id) => id };
+    assert.equal(name, "pos_voucher_campaign_settings");
+    return {
+      where: (...args) => {
+        assert.deepEqual(args, ["warehouse_id", "==", "store-a"]);
+        return {
+          get: async () => ({
+            docs: [
+              setting("with-suffix"), setting("without-suffix"), setting("duplicate"),
+              setting("another-prefix"), setting("inactive"), setting("expired"),
+              setting("disabled", { enabled: false }), setting("deleted", { is_deleted: true }),
+            ],
+          }),
+        };
+      },
+    };
+  });
+  t.mock.method(db, "getAll", async (...args) => {
+    assert.deepEqual(args.slice(0, -1), [
+      "with-suffix", "without-suffix", "duplicate", "another-prefix", "inactive", "expired",
+    ]);
+    return [
+      campaign("A", "B"), campaign("A", ""), campaign("a", "b"),
+      campaign("C", "D"), campaign("A", "X", { status: "PAUSED" }),
+      campaign("C", "X", { valid_to: "2001-01-01" }),
+    ];
+  });
+  assert.deepEqual(await listVoucherCodeFormats("store-a"), [
+    { prefix: "A", suffixes: ["", "B"] },
+    { prefix: "C", suffixes: ["D"] },
+  ]);
+});
 
 const product = {
   goodsId: "TICKET-01",

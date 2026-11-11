@@ -14,7 +14,7 @@ import type {
   OrderMemberSnapshot,
   PaymentMethod,
 } from "@/lib/types/order";
-import type { PosVoucherResolution } from "@/lib/types/voucher";
+import type { PosVoucherCodeFormat, PosVoucherResolution } from "@/lib/types/voucher";
 
 /**
  * Generate a unique local order ID using timestamp and a random suffix.
@@ -49,6 +49,18 @@ export async function resolveVoucher(
   const result = await callable(await withDeviceAuth({
     action: "resolveVoucher" as const,
     payload: { code, warehouseId },
+  }));
+  return result.data;
+}
+
+export async function listVoucherCodeFormats(warehouseId: string): Promise<PosVoucherCodeFormat[]> {
+  const callable = httpsCallable<
+    { action: "listVoucherCodeFormats"; payload: { warehouseId: string } },
+    PosVoucherCodeFormat[]
+  >(functions, "getPosAuthSession");
+  const result = await callable(await withDeviceAuth({
+    action: "listVoucherCodeFormats" as const,
+    payload: { warehouseId },
   }));
   return result.data;
 }

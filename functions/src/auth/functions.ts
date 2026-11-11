@@ -29,7 +29,7 @@ import {
   retryPosOrderSyncForUser,
 } from "../order/functions";
 import { assertActivePosDevice } from "../services/posDeviceAccessService";
-import { resolveVoucherForCart } from "../services/voucherService";
+import { listVoucherCodeFormats, resolveVoucherForCart } from "../services/voucherService";
 import {
   listPosMemberCardsForUser,
   listPosMemberPassTicketsForUser,
@@ -267,6 +267,7 @@ export const getPosAuthSession = onCall(
       action === "getCloseoutOrders" ||
       action === "getLatestOrder" ||
       action === "resolveVoucher" ||
+      action === "listVoucherCodeFormats" ||
       action === "retryOrderSync"
     ) {
       try {
@@ -296,6 +297,13 @@ export const getPosAuthSession = onCall(
             request.data?.payload?.code,
             device.warehouseId,
           );
+        }
+        if (action === "listVoucherCodeFormats") {
+          const session = await loadPosAuthSession(request.auth.uid, device.warehouseId);
+          if (!session.warehouses.some((warehouse) => warehouse.id === device.warehouseId)) {
+            throw new HttpsError("permission-denied", "Bạn không có quyền thao tác tại cửa hàng này.");
+          }
+          return await listVoucherCodeFormats(device.warehouseId);
         }
         if (action === "getCloseoutOrders") {
           return await listCloseoutOrdersForUser(

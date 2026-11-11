@@ -10,7 +10,7 @@ import { isProductAvailableForWarehouse } from "./productVisibilityPolicy";
 
 export const VOUCHER_CAMPAIGNS_COLLECTION = "marketing_voucher_campaigns";
 export const VOUCHER_CODES_COLLECTION = "marketing_voucher_codes";
-export const VOUCHER_SETTINGS_COLLECTION = "pos_voucher_campaign_settings";
+export const VOUCHER_SETTINGS_COLLECTION = POS_COLLECTIONS.voucherCampaignSettings;
 export const VOUCHER_REDEMPTIONS_COLLECTION = "pos_voucher_redemptions";
 const SUPPORTED_REWARDS = new Set<PosVoucherRewardType>([
   "DISCOUNT_PERCENT",
@@ -58,6 +58,43 @@ export const buildVoucherSettingId = (
   warehouseId: string,
   campaignId: string,
 ): string => `${warehouseId}__${campaignId}`;
+
+export async function listVoucherCodeFormats(warehouseId: string) {
+  const settings = await db.collection(VOUCHER_SETTINGS_COLLECTION)
+    .where("warehouse_id", "==", warehouseId)
+    .get();
+  const campaignIds = settings.docs.flatMap((doc) => {
+    const setting = doc.data();
+    const campaignId = voucherText(setting.campaign_id);
+    return setting.enabled === true && setting.is_deleted !== true &&
+      campaignId && doc.id === buildVoucherSettingId(warehouseId, campaignId)
+      ? [campaignId]
+      : [];
+  });
+  if (campaignIds.length === 0) return [];
+
+  const campaigns = await db.getAll(
+    ...campaignIds.map((id) => db.collection(VOUCHER_CAMPAIGNS_COLLECTION).doc(id)),
+    { fieldMask: ["prefix", "suffix", "is_deleted", "status", "valid_from", "valid_to"] },
+  );
+  const today = businessDate();
+  const suffixesByPrefix = new Map<string, Set<string>>();
+  for (const doc of campaigns) {
+    const campaign = doc.data();
+    if (!campaign || campaign.is_deleted === true || campaign.status !== "ACTIVE" ||
+        voucherText(campaign.valid_from) > today || voucherText(campaign.valid_to) < today ||
+        typeof campaign.prefix !== "string" || typeof campaign.suffix !== "string") continue;
+
+    const prefix = voucherText(campaign.prefix).toUpperCase();
+    const suffix = voucherText(campaign.suffix).toUpperCase();
+    const suffixes = suffixesByPrefix.get(prefix) ?? new Set<string>();
+    suffixes.add(suffix);
+    suffixesByPrefix.set(prefix, suffixes);
+  }
+  return [...suffixesByPrefix]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([prefix, suffixes]) => ({ prefix, suffixes: [...suffixes].sort() }));
+}
 
 const assertVoucherUsable = (
   code: RawVoucherCode,

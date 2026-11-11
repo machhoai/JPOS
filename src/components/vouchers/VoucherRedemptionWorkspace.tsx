@@ -30,6 +30,7 @@ import type {
     VoucherRedemptionResultStatus,
 } from "@/lib/types/voucherRedemption";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
+import VoucherCodeForm from "./VoucherCodeForm";
 
 interface VoucherRedemptionWorkspaceProps {
     mode: VoucherRedemptionMode;
@@ -39,6 +40,7 @@ interface VoucherRedemptionWorkspaceProps {
     pendingCount: number;
     batchCount: number;
     canFlush: boolean;
+    warehouseId: string;
     warehouseName?: string;
     onModeChange: (mode: VoucherRedemptionMode) => void;
     onSubmit: (code: string) => void;
@@ -64,6 +66,7 @@ export default function VoucherRedemptionWorkspace({
     pendingCount,
     batchCount,
     canFlush,
+    warehouseId,
     warehouseName,
     onModeChange,
     onSubmit,
@@ -72,6 +75,7 @@ export default function VoucherRedemptionWorkspace({
     onClearResults,
 }: VoucherRedemptionWorkspaceProps) {
     const [manualCode, setManualCode] = useState("");
+    const [showCodeForm, setShowCodeForm] = useState(false);
     const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
     const [historyFilter, setHistoryFilter] = useState<"ALL" | "SUCCESS" | "FAILED">("ALL");
     const [reprintingId, setReprintingId] = useState<string | null>(null);
@@ -207,12 +211,13 @@ export default function VoucherRedemptionWorkspace({
 
                 {/* ── Scanner Input Bar ───────────────────────────────── */}
                 <div className="mt-3.5 flex flex-wrap items-center gap-2">
-                    <div className="relative flex-1">
+                    <div className="relative min-w-40 flex-1">
                         <div className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
                             <ScanLine size={18} />
                         </div>
                         <input
                             ref={inputRef}
+                            aria-label="Quét hoặc nhập mã voucher đầy đủ"
                             value={manualCode}
                             onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                             onKeyDown={(e) => {
@@ -245,6 +250,16 @@ export default function VoucherRedemptionWorkspace({
                         Xử lý mã
                     </button>
 
+                    <button
+                        type="button"
+                        aria-expanded={showCodeForm}
+                        aria-controls="voucher-code-form"
+                        onClick={() => setShowCodeForm((visible) => !visible)}
+                        className="inline-flex h-11 items-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 aria-expanded:border-orange-300 aria-expanded:bg-orange-50 aria-expanded:text-orange-900"
+                    >
+                        Nhập theo mẫu
+                    </button>
+
                     {batchCount > 0 && (
                         <button
                             type="button"
@@ -255,6 +270,18 @@ export default function VoucherRedemptionWorkspace({
                             {isFinalizing ? <LoaderCircle className="animate-spin" size={16} /> : <Printer size={16} />}
                             Xác nhận & in ({batchCount})
                         </button>
+                    )}
+                </div>
+                <div id="voucher-code-form" hidden={!showCodeForm}>
+                    {showCodeForm && (
+                        <VoucherCodeForm
+                            key={warehouseId}
+                            warehouseId={warehouseId}
+                            onSubmit={(code) => {
+                                setSelectedResultId(null);
+                                onSubmit(code);
+                            }}
+                        />
                     )}
                 </div>
             </header>

@@ -5,6 +5,7 @@ export {
   voucherFieldsForOrder,
 } from "./voucherRedemptionService";
 export {
+  listVoucherCodeFormats,
   normalizeVoucherCode,
   resolveVoucherForCart,
 } from "./voucherResolutionService";

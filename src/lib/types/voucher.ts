@@ -21,3 +21,8 @@ export interface PosVoucherResolution {
 export interface PosOrderVoucherSnapshot extends PosVoucherResolution {
   discountAmount: number;
 }
+
+export interface PosVoucherCodeFormat {
+  prefix: string;
+  suffixes: string[];
+}

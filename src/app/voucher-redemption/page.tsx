@@ -38,6 +38,7 @@ export default function VoucherRedemptionPage() {
         pendingCount={queue.pendingCount}
         batchCount={queue.batchCount}
         canFlush={queue.canFlush}
+        warehouseId={effectiveWarehouseId}
         warehouseName={effectiveWarehouseName || undefined}
         onModeChange={queue.setMode}
         onSubmit={queue.enqueue}
