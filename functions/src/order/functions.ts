@@ -1305,6 +1305,11 @@ async function synchronizeRemoteOrder(
 
   let hkOrderNumber = order.hkOrderNumber;
   try {
+    if (!Number.isSafeInteger(order.totalAmount) || order.totalAmount <= 0) {
+      throw new Error(
+        "Tổng tiền đơn POS bằng 0 hoặc không hợp lệ; cần đối soát trước khi đồng bộ OpenAPI.",
+      );
+    }
     if (!hkOrderNumber) {
       const createResponse = await createRemoteOrder({
         uid: order.uid || "",
@@ -1342,7 +1347,7 @@ async function synchronizeRemoteOrder(
     if (!statusResponse || !isRemotePaymentConfirmed(statusResponse)) {
       const payResponse = await confirmRemotePayment({
         orderNumber: hkOrderNumber,
-        payAmount: order.voucherCodes?.length ? order.totalAmount : null,
+        payAmount: order.totalAmount,
       });
       statusResponse = await queryPaymentStatus({
         orderNumber: hkOrderNumber,
