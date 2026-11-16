@@ -81,7 +81,8 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Khi mở ứng dụng, chỉ khôi phục đơn được tạo trong cùng ngày theo giờ Việt Nam.
+            - Đơn nháp được ghi rõ là chưa thanh toán và ẩn phương thức thanh toán cùng tổng tiền. Trong chi tiết đơn, nút in biên lai và in vé bị vô hiệu hóa.
+            - Chi tiết đơn dùng QR tài khoản cố định hiển thị lý do dùng QR cố định, trạng thái xác nhận và người xác nhận nếu có.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: false

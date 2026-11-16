@@ -6,7 +6,7 @@ import { formatDateTime } from "@/lib/utils/dateFormat";
 // OrderDetailModal — Chi tiết đơn hàng đầy đủ
 // =============================================================================
 
-import type { PosOrder } from "@/lib/types/order";
+import type { FixedTransferReason, FixedTransferStatus, PosOrder } from "@/lib/types/order";
 import { formatCurrency } from "@/lib/utils/formatCurrency";
 import { getOrderCustomerDisplay } from "@/lib/utils/orderCustomer";
 import { getOrderDisplayStatus } from "@/lib/utils/orderLifecycle";
@@ -33,7 +33,19 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
     LOCAL_PAID: { label: "Chờ đồng bộ", color: "text-amber-400" },
     SYNCING: { label: "Đang đồng bộ", color: "text-blue-400" },
     SYNC_FAILED: { label: "Lỗi đồng bộ", color: "text-red-400" },
-    DRAFT: { label: "Nháp", color: "text-gray-400" },
+    DRAFT: { label: "Nháp · Chưa thanh toán", color: "text-[var(--color-text-secondary)]" },
+};
+
+const FIXED_TRANSFER_REASONS: Record<FixedTransferReason, string> = {
+    PAYOS_CREATE_FAILED: "POS chuyển sang QR cố định vì PayOS không tạo được link thanh toán.",
+    PAYOS_QR_MISSING: "POS chuyển sang QR cố định vì PayOS không trả về mã QR.",
+    FIXED_TRANSFER_ONLY: "Điểm bán được cấu hình dùng QR cố định.",
+};
+
+const FIXED_TRANSFER_STATUSES: Record<FixedTransferStatus, string> = {
+    AWAITING_MANUAL_CONFIRMATION: "Đang chờ nhân viên xác nhận thủ công.",
+    MANUALLY_CONFIRMED: "Nhân viên đã xác nhận thủ công.",
+    CANCELLED: "Phiên chuyển khoản QR cố định đã bị hủy.",
 };
 
 export default function OrderDetailModal({
@@ -43,6 +55,7 @@ export default function OrderDetailModal({
     onRetrySync,
 }: OrderDetailModalProps) {
     const displayStatus = getOrderDisplayStatus(order);
+    const isDraft = displayStatus === "DRAFT";
     const status = STATUS_LABELS[displayStatus] || STATUS_LABELS.DRAFT;
     const discountAmount = order.discountAmount ?? order.voucherDiscount ?? 0;
     const subtotalAmount = order.subtotalAmount ?? order.totalAmount;
@@ -50,6 +63,7 @@ export default function OrderDetailModal({
         ? order.totalAmount
         : order.totalAmount - discountAmount;
     const isPaymentUnverified = order.paymentVerificationStatus === "UNVERIFIED";
+    const fixedTransfer = order.fixedTransferDetails;
     const customer = getOrderCustomerDisplay(order);
     const luckyDrawTicketCount = buildPrintableLuckyDrawTickets(order).length;
 
@@ -85,24 +99,41 @@ export default function OrderDetailModal({
                             {order.paymentDetails?.manualConfirmation && <p className="mt-1 text-xs">Đơn đã được {order.paymentDetails.manualConfirmation.confirmedByName} hoàn thành thủ công lúc {formatDateTime(order.paymentDetails.manualConfirmation.confirmedAt)}.</p>}
                         </div>
                     )}
-                    {isPaymentUnverified && (
+                    {fixedTransfer && (
+                        <div className="rounded-xl border border-amber-500/60 bg-amber-500/15 p-3 text-[var(--color-text-primary)]">
+                            <p className="text-sm font-extrabold">Chuyển khoản qua QR tài khoản cố định</p>
+                            <p className="mt-1 text-xs leading-relaxed">{FIXED_TRANSFER_REASONS[fixedTransfer.reason]}</p>
+                            <p className="mt-1 text-xs leading-relaxed">{FIXED_TRANSFER_STATUSES[fixedTransfer.status]}</p>
+                            {fixedTransfer.status === "MANUALLY_CONFIRMED" && (
+                                <>
+                                    {fixedTransfer.confirmedByName && (
+                                        <p className="mt-1 text-xs">Người xác nhận là {fixedTransfer.confirmedByName}.</p>
+                                    )}
+                                    {fixedTransfer.confirmedAt && (
+                                        <p className="mt-1 text-xs">Xác nhận lúc {formatDateTime(fixedTransfer.confirmedAt)}.</p>
+                                    )}
+                                    {isPaymentUnverified && (
+                                        <p className="mt-2 text-xs font-semibold">
+                                            Chưa được xác nhận thanh toán tự động. Đối chiếu giao dịch ngân hàng khi cần.
+                                        </p>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                    {isPaymentUnverified && fixedTransfer?.status !== "MANUALLY_CONFIRMED" && (
                         <div className="rounded-xl border border-amber-500/60 bg-amber-500/15 p-3 text-amber-300">
                             <p className="text-sm font-extrabold">Chưa được xác nhận thanh toán</p>
                             <p className="mt-1 text-xs leading-relaxed">
                                 Đơn được nhân viên hoàn tất thủ công khi hệ thống chưa thể xác nhận giao dịch. Hãy kiểm tra giao dịch ngân hàng khi cần.
                             </p>
-                            {order.fixedTransferDetails?.confirmedByName && (
-                                <p className="mt-2 text-xs font-semibold">
-                                    Nhân viên xác nhận: {order.fixedTransferDetails.confirmedByName}
-                                </p>
-                            )}
                         </div>
                     )}
                     {/* Thông tin chung */}
                     <div className="grid grid-cols-2 gap-3">
                         <InfoRow label="Trạng thái" value={status.label} className={status.color} />
                         <InfoRow label="Thời gian" value={formatDateTime(order.createdAt)} />
-                        <InfoRow label="Thanh toán" value={order.paymentMethodName || order.paymentMethod} />
+                        {!isDraft && <InfoRow label="Thanh toán" value={order.paymentMethodName || order.paymentMethod} />}
                         <InfoRow label="Mã HK" value={order.hkOrderNumber || "—"} />
                         {order.operatorName && <InfoRow label="Nhân viên" value={order.operatorName} />}
                         {order.refundOrderNumber && <InfoRow label="Mã hoàn tiền" value={order.refundOrderNumber} />}
@@ -179,29 +210,35 @@ export default function OrderDetailModal({
                     </div>
                 </div>
 
-                {/* Footer — Tổng tiền */}
+                {/* Footer */}
                 <div className="px-5 py-4 border-t border-[var(--color-border)] shrink-0 space-y-1">
-                    <div className="flex justify-between text-sm text-[var(--color-text-secondary)]">
-                        <span>Tạm tính</span>
-                        <span>{formatCurrency(subtotalAmount)}</span>
-                    </div>
-                    {discountAmount > 0 && (
-                        <div className="flex justify-between text-sm text-amber-400">
-                            <span>Giảm giá</span>
-                            <span>-{formatCurrency(discountAmount)}</span>
-                        </div>
+                    {!isDraft && (
+                        <>
+                            <div className="flex justify-between text-sm text-[var(--color-text-secondary)]">
+                                <span>Tạm tính</span>
+                                <span>{formatCurrency(subtotalAmount)}</span>
+                            </div>
+                            {discountAmount > 0 && (
+                                <div className="flex justify-between text-sm text-amber-400">
+                                    <span>Giảm giá</span>
+                                    <span>-{formatCurrency(discountAmount)}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between pt-1 border-t border-[var(--color-border)]">
+                                <span className="text-sm font-bold text-[var(--color-text-primary)]">Tổng cộng</span>
+                                <span className="text-xl font-bold text-[var(--color-accent)]">{formatCurrency(finalAmount)}</span>
+                            </div>
+                        </>
                     )}
-                    <div className="flex justify-between pt-1 border-t border-[var(--color-border)]">
-                        <span className="text-sm font-bold text-[var(--color-text-primary)]">Tổng cộng</span>
-                        <span className="text-xl font-bold text-[var(--color-accent)]">{formatCurrency(finalAmount)}</span>
-                    </div>
                     <ReceiptPrintButton
                         order={order}
+                        disabled={isDraft}
                         className="mt-3 flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl bg-[#202124] px-4 text-sm font-bold text-white active:scale-[0.98] disabled:opacity-50"
                     />
                     {order.items.some((item) => (item.ticketCodes?.length ?? 0) > 0) && (
                         <TicketPrintButton
                             order={order}
+                            disabled={isDraft}
                             className="mt-2 flex min-h-12 w-full touch-manipulation items-center justify-center gap-2 rounded-xl border border-[var(--color-accent)] bg-white px-4 text-sm font-bold text-[var(--color-accent)] active:scale-[0.98] disabled:opacity-50"
                         />
                     )}

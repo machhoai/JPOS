@@ -209,32 +209,37 @@ export default function OrderCardRow({ order, onSelectOrder, onRetrySync, isHigh
 
             {/* Right Section: Price & Action */}
             <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-[var(--color-border)]">
-                {/* Financial Summary */}
-                <div className="text-left md:text-right">
-                    <div className="flex gap-2">
-                        {/* Payment Method Badge */}
-                        <span className="inline-flex items-center gap-1  rounded-full text-sm font-medium text-[var(--color-text-secondary)]">
-                            {order.paymentMethod === "QR_CODE" ? <IoQrCode className="size-5" /> : <IoCash className="size-5" />}
-                            {order.paymentMethodName || (order.paymentMethod === "QR_CODE" ? "Chuyển khoản / QR" : "Tiền mặt")}
-                        </span>
-                        <div className="text-base font-extrabold text-[var(--color-accent)]">
-                            {formatCurrency(order.totalAmount)}
+                {displayStatus === "DRAFT" ? (
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${status.bgClass} ${status.textClass}`}>
+                        Nháp · Chưa thanh toán
+                    </span>
+                ) : (
+                    <div className="text-left md:text-right">
+                        <div className="flex gap-2">
+                            {/* Payment Method Badge */}
+                            <span className="inline-flex items-center gap-1  rounded-full text-sm font-medium text-[var(--color-text-secondary)]">
+                                {order.paymentMethod === "QR_CODE" ? <IoQrCode className="size-5" /> : <IoCash className="size-5" />}
+                                {order.paymentMethodName || (order.paymentMethod === "QR_CODE" ? "Chuyển khoản / QR" : "Tiền mặt")}
+                            </span>
+                            <div className="text-base font-extrabold text-[var(--color-accent)]">
+                                {formatCurrency(order.totalAmount)}
+                            </div>
                         </div>
+                        {(order.discountAmount ?? order.voucherDiscount ?? 0) > 0 ? (
+                            <div className="text-[11px] font-semibold text-amber-500 flex items-center md:justify-end gap-0.5">
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" />
+                                </svg>
+                                Giảm {formatCurrency(order.discountAmount ?? order.voucherDiscount ?? 0)}
+                            </div>
+                        ) : (
+                            <div className="text-[11px] text-[var(--color-text-muted)]">
+                                {order.operatorName ? `NV: ${order.operatorName}` : "Đã thanh toán"}
+                            </div>
+                        )}
                     </div>
-                    {(order.discountAmount ?? order.voucherDiscount ?? 0) > 0 ? (
-                        <div className="text-[11px] font-semibold text-amber-500 flex items-center md:justify-end gap-0.5">
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6Z" />
-                            </svg>
-                            Giảm {formatCurrency(order.discountAmount ?? order.voucherDiscount ?? 0)}
-                        </div>
-                    ) : (
-                        <div className="text-[11px] text-[var(--color-text-muted)]">
-                            {order.operatorName ? `NV: ${order.operatorName}` : "Đã thanh toán"}
-                        </div>
-                    )}
-                </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex items-center gap-2">
