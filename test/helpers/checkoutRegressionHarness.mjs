@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import ts from "typescript";
+import * as orderHistoryDate from "../../src/lib/utils/orderHistoryDate.ts";
 
 const require = createRequire(import.meta.url);
 const quiet = { error() {}, info() {}, warn() {} };
@@ -25,7 +26,7 @@ export function checkoutCallback(file, name, scope) {
   return exports.callback;
 }
 
-export function cartHarness() {
+export function cartHarness(savedJournal = null) {
   const requests = [], journal = [];
   const control = { error: null };
   const services = {
@@ -40,7 +41,7 @@ export function cartHarness() {
   };
   const journalService = {
     saveCheckoutJournal: async (record) => { journal.push(structuredClone(record)); return record; },
-    clearCheckoutJournal: async () => {}, loadCheckoutJournal: async () => null, recordPendingFailure: async () => {},
+    clearCheckoutJournal: async () => {}, loadCheckoutJournal: async () => savedJournal, recordPendingFailure: async () => {},
   };
   const source = ts.transpileModule(readFileSync(new URL("../../src/lib/stores/useCartStore.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -50,6 +51,7 @@ export function cartHarness() {
     if (name === "zustand") return require(name);
     if (name.endsWith("orderService")) return services;
     if (name.endsWith("checkoutJournalService")) return journalService;
+    if (name.endsWith("orderHistoryDate")) return orderHistoryDate;
     throw new Error(`Unexpected cart import: ${name}`);
   }, exports, quiet);
   const store = exports.useCartStore;
