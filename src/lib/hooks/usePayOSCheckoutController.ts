@@ -267,8 +267,8 @@ export function usePayOSCheckoutController({
     }
   }, [confirmPayOSManually]);
 
-  const cancelPayment = useCallback(async () => {
-    const orderId = localOrderId;
+  const cancelPayment = useCallback(async (onSuccess?: () => void) => {
+    const orderId = manageCartLock ? useCartStore.getState().paymentLockOrderId : localOrderId;
     const isFixedTransfer = fixedTransfer?.status === "AWAITING_MANUAL_CONFIRMATION";
     if (!orderId) {
       showError(
@@ -287,39 +287,47 @@ export function usePayOSCheckoutController({
       "Đang hủy mã thanh toán",
       isFixedTransfer ? "Vui lòng chờ hệ thống xử lý." : "Vui lòng chờ PayOS xác nhận.",
     );
+    let reuseDraft = false;
     try {
-      const result = await cancelPayOS();
-      if (!result) return;
-      if (result.nextAction === "COMPLETED") return;
-      if (result.nextAction !== "RECREATE") {
-        showWarning(
-          "Chưa thể mở khóa giỏ hàng",
-          "PayOS chưa xác nhận mã đã hủy. Giỏ hàng vẫn được khóa để tránh sai lệch thanh toán.",
-        );
+      const result = await cancelPayOS(orderId);
+      if (!result || result.nextAction === "COMPLETED") return;
+      if (result.nextAction !== "RECREATE" && !manageCartLock) {
+        showWarning("Chưa thể hủy mã thanh toán", "Hệ thống chưa xác nhận việc hủy mã. Vui lòng thử lại.");
         return;
       }
-      if (manageCartLock) unlockCartAfterCancellation(orderId);
-      onCancelled?.();
-      resetPayment();
-      if (result.cancellationMode === "LOCAL_ONLY") {
-        showWarning(
-          "Đã hủy thanh toán tại POS",
-          "Giỏ hàng đã được mở khóa. PayOS chưa xác nhận hủy mã cũ; không để khách tiếp tục quét hoặc chuyển khoản bằng mã đó.",
-        );
+      reuseDraft = result.nextAction === "RECREATE" && result.cancellationMode !== "LOCAL_ONLY";
+    } catch (error) {
+      const paymentMismatch = error && typeof error === "object" &&
+        "code" in error && error.code === "functions/data-loss";
+      if (paymentMismatch) {
+        showError("Cần đối chiếu giao dịch", "PayOS báo đã nhận tiền nhưng thông tin chuyển khoản không khớp đơn hàng.");
         return;
       }
+      if (!manageCartLock) {
+        showError("Chưa thể hủy mã thanh toán", "Hệ thống chưa xác nhận việc hủy mã. Vui lòng thử lại.");
+        return;
+      }
+    }
+    const current = usePayOSPaymentStore.getState();
+    if (current.localOrderId !== orderId || current.nextAction === "COMPLETED") return;
+    if (manageCartLock) {
+      if (useCartStore.getState().paymentLockOrderId !== orderId) return;
+      unlockCartAfterCancellation(orderId, reuseDraft);
+    }
+    resetPayment();
+    onCancelled?.();
+    if (!reuseDraft) {
+      showWarning(
+        "Đã dừng thanh toán tại POS",
+        "Mã cũ có thể vẫn có hiệu lực. Hãy kiểm tra giao dịch ngân hàng trước khi thu lại tiền và yêu cầu khách ngừng sử dụng mã cũ.",
+      );
+    } else {
       showSuccess(
         "Đã hủy mã thanh toán",
-        "Giỏ hàng đã được mở khóa; bạn có thể chọn hình thức thanh toán khác.",
-      );
-    } catch {
-      showError(
-        "Chưa thể hủy mã thanh toán",
-        isFixedTransfer
-          ? "Hệ thống chưa hủy được mã dự phòng. Vui lòng thử lại, đơn hàng không bị mất."
-          : "Không kết nối được PayOS nên giỏ hàng vẫn được khóa. Vui lòng thử lại, đơn hàng không bị mất.",
+        "Bạn có thể sửa giỏ hàng hoặc chọn hình thức thanh toán khác.",
       );
     }
+    onSuccess?.();
   }, [
     cancelPayOS,
     fixedTransfer?.status,

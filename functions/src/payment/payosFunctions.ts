@@ -509,7 +509,8 @@ async function updateAttemptStatus(
     if (!details || !attempt) return order;
     if (
       (!allowCompletedOrder && isCompletedOrderStatus(order.status)) ||
-      attempt.status === "PAID"
+      attempt.status === "PAID" ||
+      (["CANCELLED", "EXPIRED"].includes(attempt.status) && isPayOSActive(status))
     ) {
       return order;
     }
@@ -1153,7 +1154,7 @@ async function cancelAttemptLocallyAfterPayOSFailure(
       !currentAttempt ||
       currentAttempt.orderCode !== attempt.orderCode ||
       isCompletedOrderStatus(order.status) ||
-      currentAttempt.status === "PAID"
+      ["PAID", "CANCELLED", "EXPIRED"].includes(currentAttempt.status)
     ) {
       return order;
     }
@@ -1323,22 +1324,24 @@ export async function cancelPayOSPaymentForUser(
       PAYOS_CANCELLATION_REQUEST_OPTIONS,
     );
   } catch (error: unknown) {
-    if (!isPayOSUnavailableError(error)) throw error;
-    if (!originalAttempt) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Đơn hàng chưa có phiên thanh toán PayOS để hủy.",
+    if (error instanceof NotFoundError) {
+      synchronized = (await authorized.docRef.get()).data() as PosOrder;
+    } else if (originalAttempt && (
+      isPayOSUnavailableError(error) ||
+      (error instanceof HttpsError && error.code === "unavailable")
+    )) {
+      const cancelledOrder = await cancelAttemptLocallyAfterPayOSFailure(
+        authorized.docRef,
+        originalAttempt,
+        error,
       );
+      return {
+        ...buildPaymentResult(cancelledOrder),
+        cancellationMode: "LOCAL_ONLY" as const,
+      };
+    } else {
+      throw error;
     }
-    const cancelledOrder = await cancelAttemptLocallyAfterPayOSFailure(
-      authorized.docRef,
-      originalAttempt,
-      error,
-    );
-    return {
-      ...buildPaymentResult(cancelledOrder),
-      cancellationMode: "LOCAL_ONLY" as const,
-    };
   }
   const attempt = getCurrentAttempt(synchronized);
   if (!attempt || inferNextAction(synchronized, attempt) === "COMPLETED") {

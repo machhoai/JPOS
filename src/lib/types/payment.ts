@@ -72,6 +72,6 @@ export interface PayOSCheckoutController {
   checkPayment: () => Promise<void>;
   retryDisplay: () => Promise<void>;
   recreatePayment: () => Promise<void>;
-  cancelPayment: () => Promise<void>;
+  cancelPayment: (onSuccess?: () => void) => Promise<void>;
   confirmManually: () => Promise<void>;
 }
