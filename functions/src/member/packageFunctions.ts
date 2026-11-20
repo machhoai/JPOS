@@ -266,7 +266,7 @@ async function finalizeMemberPackageOrder(
       completedAt: order.sync.syncedAt,
     };
   }
-  if (order.status === "DRAFT") {
+  if (order.status === "DRAFT" || order.status === "CANCELLED" || order.syncStatus === "CANCELLED") {
     throw new HttpsError(
       "failed-precondition",
       "Đơn chưa được xác nhận thanh toán tại POS.",
@@ -279,7 +279,18 @@ async function finalizeMemberPackageOrder(
     );
   }
 
-  await docRef.update({ status: "SYNCING", updatedAt: new Date().toISOString() });
+  await db.runTransaction(async (transaction) => {
+    const current = (await transaction.get(docRef)).data() as PosOrder | undefined;
+    if (!current || current.status !== order.status ||
+        current.cancellationOperationId || current.syncStatus === "CANCELLED") {
+      throw new HttpsError("aborted", "Đơn vừa thay đổi. Vui lòng tải lại.");
+    }
+    transaction.update(docRef, {
+      status: "SYNCING",
+      version: (current.version ?? 0) + 1,
+      updatedAt: new Date().toISOString(),
+    });
+  });
   let hkOrderNumber = order.hkOrderNumber;
   let currentAction = "order_create";
   try {

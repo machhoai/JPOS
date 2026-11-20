@@ -101,6 +101,7 @@ export function isPayOSPaymentAmountValid(
 export type PayOSWebhookDecision =
   | "APPLY_PAYMENT"
   | "ALREADY_COMPLETED"
+  | "CANCELLED_ORDER"
   | "REJECT";
 
 export function decidePayOSWebhookPayment(input: {
@@ -131,6 +132,7 @@ export function decidePayOSWebhookPayment(input: {
   ) {
     return "REJECT";
   }
+  if (input.orderStatus === "CANCELLED") return "CANCELLED_ORDER";
   return isCompletedOrderStatus(input.orderStatus)
     ? "ALREADY_COMPLETED"
     : "APPLY_PAYMENT";

@@ -137,7 +137,8 @@ function inferNextAction(
 }
 
 function buildPaymentResult(order: PosOrder) {
-  const attempt = getCurrentAttempt(order);
+  const cancelled = order.status === "CANCELLED" || order.syncStatus === "CANCELLED";
+  const attempt = cancelled ? null : getCurrentAttempt(order);
   const serverTime = new Date().toISOString();
   return {
     localOrderId: order.localOrderId,
@@ -163,10 +164,10 @@ function buildPaymentResult(order: PosOrder) {
       reference: attempt.reference ?? null,
       error: attempt.error ?? null,
     } : null,
-    fixedTransfer: order.fixedTransferDetails ?? null,
+    fixedTransfer: cancelled ? null : order.fixedTransferDetails ?? null,
     paymentVerificationStatus:
       order.paymentVerificationStatus ?? "VERIFIED",
-    nextAction: inferNextAction(order, attempt),
+    nextAction: cancelled ? "RECREATE" as const : inferNextAction(order, attempt),
     serverTime,
     manualConfirmation: order.paymentDetails?.manualConfirmation ?? null,
   };
@@ -509,7 +510,8 @@ async function updateAttemptStatus(
     if (!details || !attempt) return order;
     if (
       (!allowCompletedOrder && isCompletedOrderStatus(order.status)) ||
-      attempt.status === "PAID"
+      attempt.status === "PAID" ||
+      (["CANCELLED", "EXPIRED"].includes(attempt.status) && isPayOSActive(status))
     ) {
       return order;
     }
@@ -549,7 +551,7 @@ export async function markPayOSPaymentPaid(
   docRef: DocumentReference,
   orderCode: number,
   payment: VerifiedPayment,
-): Promise<"PAID" | "ALREADY_COMPLETED" | "REJECTED"> {
+): Promise<"PAID" | "ALREADY_COMPLETED" | "CANCELLED_PAYMENT_RECORDED" | "REJECTED"> {
   return db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(docRef);
     if (!snapshot.exists) return "REJECTED";
@@ -583,7 +585,8 @@ export async function markPayOSPaymentPaid(
       });
       return "REJECTED";
     }
-    if (decision !== "ALREADY_COMPLETED" && order.voucherCodes?.length) {
+    const cancelled = decision === "CANCELLED_ORDER" || order.syncStatus === "CANCELLED";
+    if (!cancelled && decision === "APPLY_PAYMENT" && order.voucherCodes?.length) {
       const calculation = await applyOrderVouchers(transaction, {
         voucherCodes: order.voucherCodes,
         warehouseId: order.warehouseId,
@@ -622,6 +625,18 @@ export async function markPayOSPaymentPaid(
       lastCheckedAt: paidAt,
       lastError: null,
     };
+    if (cancelled) {
+      if (attempt.status !== "PAID" && !attempt.latePaymentAfterCancellation) {
+        transaction.update(docRef, {
+          paymentDetails: replaceAttempt(paymentDetails, {
+            ...paidAttempt,
+            status: "CANCELLED",
+            latePaymentAfterCancellation: true,
+          }),
+        });
+      }
+      return "CANCELLED_PAYMENT_RECORDED";
+    }
     const verificationUpdate = (isPayOSOrder(order) || decision !== "ALREADY_COMPLETED") ? {
       paymentVerificationStatus: "VERIFIED" as const,
       ...(order.payosReconciliation || details.manualConfirmation ? {
@@ -1153,7 +1168,7 @@ async function cancelAttemptLocallyAfterPayOSFailure(
       !currentAttempt ||
       currentAttempt.orderCode !== attempt.orderCode ||
       isCompletedOrderStatus(order.status) ||
-      currentAttempt.status === "PAID"
+      ["PAID", "CANCELLED", "EXPIRED"].includes(currentAttempt.status)
     ) {
       return order;
     }
@@ -1323,22 +1338,24 @@ export async function cancelPayOSPaymentForUser(
       PAYOS_CANCELLATION_REQUEST_OPTIONS,
     );
   } catch (error: unknown) {
-    if (!isPayOSUnavailableError(error)) throw error;
-    if (!originalAttempt) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Đơn hàng chưa có phiên thanh toán PayOS để hủy.",
+    if (error instanceof NotFoundError) {
+      synchronized = (await authorized.docRef.get()).data() as PosOrder;
+    } else if (originalAttempt && (
+      isPayOSUnavailableError(error) ||
+      (error instanceof HttpsError && error.code === "unavailable")
+    )) {
+      const cancelledOrder = await cancelAttemptLocallyAfterPayOSFailure(
+        authorized.docRef,
+        originalAttempt,
+        error,
       );
+      return {
+        ...buildPaymentResult(cancelledOrder),
+        cancellationMode: "LOCAL_ONLY" as const,
+      };
+    } else {
+      throw error;
     }
-    const cancelledOrder = await cancelAttemptLocallyAfterPayOSFailure(
-      authorized.docRef,
-      originalAttempt,
-      error,
-    );
-    return {
-      ...buildPaymentResult(cancelledOrder),
-      cancellationMode: "LOCAL_ONLY" as const,
-    };
   }
   const attempt = getCurrentAttempt(synchronized);
   if (!attempt || inferNextAction(synchronized, attempt) === "COMPLETED") {

@@ -53,7 +53,7 @@ interface PayOSPaymentState {
   handleDisplayTimeout: () => Promise<PayOSPaymentResult | null>;
   retryDisplay: () => Promise<PayOSPaymentResult | null>;
   recreatePayment: () => Promise<PayOSPaymentResult | null>;
-  cancelPayment: () => Promise<PayOSPaymentResult | null>;
+  cancelPayment: (orderId?: string) => Promise<PayOSPaymentResult | null>;
   confirmManually: () => Promise<PayOSPaymentResult | null>;
   updateRemainingSeconds: (nowMs?: number) => void;
   resetPayment: () => void;
@@ -357,22 +357,21 @@ export const usePayOSPaymentStore = create<PayOSPaymentState>((set, get) => ({
     }
   },
 
-  cancelPayment: async () => {
+  cancelPayment: async (orderId) => {
     const update = requestUpdate(set);
-    const localOrderId = get().localOrderId;
-    if (!localOrderId || get().isChecking) return null;
-    set({ isChecking: true, error: null, errorKind: null });
+    const state = get();
+    const localOrderId = orderId ?? state.localOrderId;
+    if (!localOrderId || state.isChecking || state.isCreating ||
+        state.nextAction === "COMPLETED" ||
+        (state.localOrderId && state.localOrderId !== localOrderId)) return null;
+    set({ localOrderId, isChecking: true, error: null, errorKind: null });
     try {
       const result = await cancelPayOSPayment(localOrderId);
       update({ ...resultState(result), isChecking: false });
       return result;
     } catch (error: unknown) {
       console.error("[PayOS] Không thể hủy thanh toán:", error);
-      update({
-        isChecking: false,
-        error: getErrorMessage(error),
-        errorKind: getErrorKind(error),
-      });
+      update({ isChecking: false });
       throw error;
     }
   },

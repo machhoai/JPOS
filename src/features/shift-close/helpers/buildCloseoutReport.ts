@@ -1,4 +1,5 @@
 import type { PosOrder } from "@/lib/types/order";
+import type { CloseoutRefund } from "@/lib/services/orderService";
 import type {
   CloseoutPaymentSummary,
   CloseoutProductSummary,
@@ -19,7 +20,7 @@ function toMoney(value: unknown): number {
   return Number.isFinite(amount) ? amount : 0;
 }
 
-export function buildCloseoutReport(orders: PosOrder[]): CloseoutReport {
+export function buildCloseoutReport(orders: PosOrder[], refunds: CloseoutRefund[] = []): CloseoutReport {
   const productMap = new Map<string, CloseoutProductSummary>();
   const paymentMap = new Map<string, CloseoutPaymentSummary>(
     PAYMENT_METHOD_ORDER.map((paymentMethodId) => [
@@ -35,7 +36,10 @@ export function buildCloseoutReport(orders: PosOrder[]): CloseoutReport {
   const operatorNames = new Set<string>();
   let productQuantity = 0;
   let totalRevenue = 0;
-  const revenueOrders = orders.filter(isOrderRevenueEligible);
+  const revenueOrders = orders.filter((order) =>
+    isOrderRevenueEligible(order) ||
+    (order.status === "CANCELLED" && Boolean(order.refundedAt) && (order.refundedAmount ?? 0) > 0),
+  );
   const payosOrders = revenueOrders.filter(isPayOSOrder);
   const payosPendingOrders = payosOrders.filter(needsPayOSReconciliation).map((order) => ({
     localOrderId: order.localOrderId,
@@ -79,6 +83,21 @@ export function buildCloseoutReport(orders: PosOrder[]): CloseoutReport {
     }
   }
 
+  let refundedAmount = 0;
+  for (const refund of refunds) {
+    const { paymentMethodId } = refund;
+    const amount = toMoney(refund.amount);
+    if (amount <= 0) continue;
+    refundedAmount += amount;
+    const payment = paymentMap.get(paymentMethodId) ?? {
+      paymentMethodId,
+      paymentMethodName: refund.paymentMethodName || "Phương thức khác",
+      orderCount: 0,
+      totalAmount: 0,
+    };
+    payment.totalAmount -= amount;
+    paymentMap.set(paymentMethodId, payment);
+  }
   const payments = Array.from(paymentMap.values()).sort((left, right) => {
     const leftIndex = PAYMENT_METHOD_ORDER.indexOf(left.paymentMethodId);
     const rightIndex = PAYMENT_METHOD_ORDER.indexOf(right.paymentMethodId);
@@ -93,7 +112,8 @@ export function buildCloseoutReport(orders: PosOrder[]): CloseoutReport {
   return {
     orderCount: revenueOrders.length,
     productQuantity,
-    totalRevenue,
+    totalRevenue: totalRevenue - refundedAmount,
+    refundedAmount,
     payosVerifiedAmount: payosOrders.filter((order) => order.paymentVerificationStatus !== "UNVERIFIED")
       .reduce((sum, order) => sum + toMoney(order.totalAmount), 0),
     payosUnverifiedAmount: payosPendingOrders.reduce((sum, order) => sum + order.totalAmount, 0),

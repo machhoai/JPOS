@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
+import { cartHarness, checkoutCallback } from "./helpers/checkoutRegressionHarness.mjs";
 
 const require = createRequire(import.meta.url);
 function deferred() {
@@ -116,4 +117,85 @@ test("device pilot settings choose realtime and the five-second fallback", async
   await store.getState().startPayment({ localOrderId: id });
   assert.equal(store.getState().realtimeEnabled, true);
   assert.equal(store.getState().pollingIntervalMs, 5000);
+});
+
+function cancellationHarness(cancelPayOSPayment) {
+  const payment = harness({ cancelPayOSPayment });
+  const cart = cartHarness();
+  const warnings = [];
+  cart.store.setState({ paymentMethod: "QR_CODE" });
+  assert.equal(cart.store.getState().lockCartForPayOS(id), true);
+  const cancel = checkoutCallback("../../src/lib/hooks/usePayOSCheckoutController.ts", "cancelPayment", {
+    manageCartLock: true,
+    useCartStore: cart.store,
+    usePayOSPaymentStore: payment,
+    fixedTransfer: null,
+    window: { confirm: () => true },
+    showInfo() {},
+    showWarning: (...message) => warnings.push(message),
+    showError: (message) => assert.fail(message),
+    showSuccess() {},
+    cancelPayOS: payment.getState().cancelPayment,
+    resetPayment: payment.getState().resetPayment,
+    unlockCartAfterCancellation: cart.store.getState().unlockCartAfterPayOSCancellation,
+    onCancelled: undefined,
+  });
+  return { ...cart, payment, cancel, warnings };
+}
+
+test("a recovered PayOS checkout can unlock and keep the cart when cancellation is unreachable", async () => {
+  const { store, payment, cancel, journal, warnings, requests } = cancellationHarness(async (orderId) => {
+    assert.equal(orderId, id);
+    throw Object.assign(new Error("Offline"), { code: "functions/unavailable" });
+  });
+  const original = store.getState().items;
+  let returnedToCart = false;
+  await cancel(() => { returnedToCart = true; });
+  assert.equal(returnedToCart, true);
+  const cart = store.getState();
+  assert.equal(cart.isPaymentLocked, false);
+  assert.equal(cart.paymentLockOrderId, null);
+  assert.deepEqual(cart.items, original);
+  assert.notEqual(cart.draftOrderId, id);
+  assert.equal(journal.at(-1).localOrderId, cart.draftOrderId);
+  assert.equal(journal.at(-1).checkpoint, "CART_READY");
+  assert.equal(payment.getState().localOrderId, null);
+  assert.equal(warnings.length, 1);
+  store.getState().setPaymentMethod("CASH");
+  await store.getState().checkout(20692, "warehouse-a");
+  assert.equal(requests[0].localOrderId, cart.draftOrderId);
+  assert.equal(requests[0].paymentMethodId, "CASH");
+});
+
+test("local-only cancellation keeps the old PayOS order separate from the editable cart", async () => {
+  const { store, cancel, warnings } = cancellationHarness(async () => ({
+    ...result(), nextAction: "RECREATE", cancellationMode: "LOCAL_ONLY",
+  }));
+  await cancel();
+  assert.equal(store.getState().isPaymentLocked, false);
+  assert.notEqual(store.getState().draftOrderId, id);
+  assert.equal(warnings.length, 1);
+});
+
+test("a confirmed cancellation allows the existing draft to be reused", async () => {
+  const { store, payment, cancel, warnings } = cancellationHarness(async () => ({
+    ...result(), nextAction: "RECREATE", cancellationMode: "REMOTE_CONFIRMED",
+  }));
+  await cancel();
+  assert.equal(store.getState().isPaymentLocked, false);
+  assert.equal(store.getState().draftOrderId, id);
+  assert.equal(payment.getState().localOrderId, null);
+  assert.equal(warnings.length, 0);
+});
+
+test("a payment confirmed while cancelling still follows the completed checkout", async () => {
+  const pending = deferred();
+  const { store, payment, cancel, warnings } = cancellationHarness(() => pending.promise);
+  const cancellation = cancel(() => assert.fail("A completed payment must not use the cancellation callback"));
+  payment.getState().receivePaymentStatus(paid);
+  pending.resolve({ ...result(), nextAction: "RECREATE", cancellationMode: "LOCAL_ONLY" });
+  await cancellation;
+  assert.equal(store.getState().isPaymentLocked, true);
+  assert.equal(payment.getState().nextAction, "COMPLETED");
+  assert.equal(warnings.length, 0);
 });

@@ -48,13 +48,20 @@ export function useProductVisibilitySync(warehouseId: string | null) {
       const cart = useCartStore.getState();
       if (cart.isPaymentLocked) {
         const orderId = cart.paymentLockOrderId;
-        const result = await usePayOSPaymentStore.getState().cancelPayment();
-        if (!orderId || result?.nextAction !== "RECREATE") {
+        const result = orderId
+          ? await usePayOSPaymentStore.getState().cancelPayment(orderId)
+          : null;
+        const payment = usePayOSPaymentStore.getState();
+        if (!orderId || result?.nextAction !== "RECREATE" ||
+            payment.localOrderId !== orderId || payment.nextAction === "COMPLETED") {
           showWarning("Giỏ hàng vẫn được khóa", "Sản phẩm vừa ngừng bán nhưng chưa thể hủy thanh toán an toàn.");
           return;
         }
-        useCartStore.getState().unlockCartAfterPayOSCancellation(orderId);
-        usePayOSPaymentStore.getState().resetPayment();
+        useCartStore.getState().unlockCartAfterPayOSCancellation(
+          orderId,
+          result.cancellationMode !== "LOCAL_ONLY",
+        );
+        payment.resetPayment();
       }
       useCartStore.getState().removeUnavailableItems(hiddenIds);
       showWarning("Giỏ hàng đã được cập nhật", `${hiddenIds.length} sản phẩm vừa ngừng bán đã được xóa khỏi giỏ.`);

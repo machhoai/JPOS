@@ -11,7 +11,8 @@ const sdk=new PayOS({clientId:'synthetic-client',apiKey:'synthetic-api',checksum
 const {payosWebhook}=require('../lib/payment/payosWebhook');
 function signed(data){const canonical=Object.keys(data).sort().map(k=>`${k}=${data[k]}`).join('&');return {code:'00',desc:'success',success:true,data,signature:crypto.createHmac('sha256',key).update(canonical).digest('hex')};}
 let number=0;
-async function fixture(){const code=70000+(++number);const id=`ORD-${Date.now()}-${String(number).padStart(6,'0')}`;const now=new Date().toISOString();const data={code:'00',orderCode:code,amount:2000,currency:'VND',paymentLinkId:`signed-test-link-${code}`,reference:'synthetic-reference',transactionDateTime:'2026-10-06T09:00:00+07:00'};
+const firstOrderCode = crypto.randomInt(1_000_000, 8_000_000);
+async function fixture(){const code=firstOrderCode+(++number);const id=`ORD-${Date.now()}-${String(number).padStart(6,'0')}`;const now=new Date().toISOString();const data={code:'00',orderCode:code,amount:2000,currency:'VND',paymentLinkId:`signed-test-link-${code}`,reference:'synthetic-reference',transactionDateTime:'2026-10-06T09:00:00+07:00'};
  const ref=db.doc(`pos_orders/${id}`);await ref.set({localOrderId:id,createdBy:'signed-owner',warehouseId:'signed-warehouse',deviceId:'signed-device',orderKind:'STANDARD',status:'DRAFT',totalAmount:2000,updatedAt:now,payosOrderCodes:[code],paymentDetails:{provider:'payos',currentOrderCode:code,attempts:[{orderCode:code,amount:2000,status:'PENDING',paymentLinkId:data.paymentLinkId,createdAt:now,linkExpiresAt:new Date(Date.now()+900000).toISOString(),displayExpiresAt:new Date(Date.now()+300000).toISOString()}]}});return {ref,data,id};}
 test('HTTP webhook verifies signatures and never double-applies payment',async(t)=>{
  const original=provider.getPayOS;provider.getPayOS=()=>({webhooks:sdk.webhooks,paymentRequests:{cancel:()=>{throw Error('Unexpected external cancellation');}}});
@@ -27,5 +28,18 @@ test('HTTP webhook verifies signatures and never double-applies payment',async(t
   await t.test('duplicate matching orders fail safely instead of selecting one',async()=>{const o=await fixture();const second=db.doc(`pos_orders/ORD-${Date.now()}-DUPLIC`);await second.set({...((await o.ref.get()).data()),localOrderId:second.id});assert.equal((await post(signed(o.data))).status,500);assert.equal((await o.ref.get()).data().status,'DRAFT');assert.equal((await second.get()).data().status,'DRAFT');});
   await t.test('valid webhook writes PAID and replay preserves paidAt and first source',async()=>{const o=await fixture();assert.equal((await post(signed(o.data))).status,200);const first=(await o.ref.get()).data();assert.equal(first.status,'LOCAL_PAID');assert.equal(first.paymentDetails.attempts[0].confirmationSource,'WEBHOOK');assert.ok(first.paymentDetails.attempts[0].webhookReceivedAt);assert.equal((await post(signed(o.data))).status,200);assert.deepEqual((await o.ref.get()).data(),first);});
   await t.test('WEBHOOK after a previously API-confirmed payment preserves first source',async()=>{const o=await fixture();const {markPayOSPaymentPaid}=require('../lib/payment/payosFunctions');await markPayOSPaymentPaid(o.ref,o.data.orderCode,{...o.data,confirmationSource:'API_CHECK'});const first=(await o.ref.get()).data();assert.equal((await post(signed(o.data))).status,200);assert.deepEqual((await o.ref.get()).data(),first);});
+  await t.test("late confirmed payment is recorded without reopening a cancelled order", async () => {
+    const order = await fixture();
+    await order.ref.update({ status: "CANCELLED", syncStatus: "CANCELLED", paymentStatus: "DRAFT" });
+    assert.equal((await post(signed(order.data))).status, 200);
+    const first = (await order.ref.get()).data();
+    assert.equal(first.status, "CANCELLED");
+    assert.equal(first.paymentStatus, "DRAFT");
+    assert.equal(first.paidAt, undefined);
+    assert.equal(first.paymentDetails.attempts[0].latePaymentAfterCancellation, true);
+    assert.equal(first.paymentDetails.attempts[0].paidAmount, 2000);
+    assert.equal((await post(signed(order.data))).status, 200);
+    assert.deepEqual((await order.ref.get()).data(), first);
+  });
  }finally{provider.getPayOS=original;await new Promise(resolve=>server.close(resolve));}
 });

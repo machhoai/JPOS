@@ -24,6 +24,7 @@ const syncStatusOf = (order: PosOrder): string => {
     SYNCING: "SYNCING",
     SYNC_FAILED: "SYNC_FAILED",
     SYNC_SUCCESS: "SYNC_SUCCESS",
+    CANCELLED: "CANCELLED",
   }[order.status];
 };
 

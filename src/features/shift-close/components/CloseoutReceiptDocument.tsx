@@ -126,6 +126,7 @@ const CloseoutReceiptDocument: React.FC<CloseoutReceiptDocumentProps> = ({
 
             <div style={{ borderTop: "2px solid #000", margin: "3mm 0 2mm" }} />
             <section style={{ display: "grid", gap: "1.5mm" }}>
+                {report.refundedAmount > 0 && <div style={rowStyle}><span>ĐÃ HOÀN TRONG CA</span><span>{moneyFormatter.format(report.refundedAmount)}</span></div>}
                 <div style={{ ...rowStyle, fontWeight: EMPHASIS_FONT_WEIGHT }}><span>TỔNG ĐƠN</span><span>{report.orderCount.toLocaleString("vi-VN")}</span></div>
                 <div style={{ ...rowStyle, fontSize: isCompact ? "12px" : "13px", fontWeight: EMPHASIS_FONT_WEIGHT }}>
                     <span>TỔNG DOANH THU</span><span>{moneyFormatter.format(report.totalRevenue)}</span>

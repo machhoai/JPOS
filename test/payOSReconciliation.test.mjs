@@ -55,3 +55,18 @@ test("an unverified order in refund processing is neither a PayOS warning nor co
   assert.equal(report.payosPendingOrders.length, 0);
   assert.equal(report.payosVerifiedAmount, 0);
 });
+
+test("closeout recognizes cash in the sale period and deducts cash in the refund period", () => {
+  const refunded = {
+    ...base, status: "CANCELLED", paymentStatus: "REFUNDED", syncStatus: "CANCELLED",
+    paymentMethod: "CASH", paymentMethodId: "CASH",
+    refundedAt: "2026-11-20T03:00:00.000Z", refundedAmount: 2000,
+  };
+  const refund = { paymentMethodId: "CASH", amount: 2000 };
+  assert.equal(buildCloseoutReport([refunded]).totalRevenue, 2000);
+  assert.equal(buildCloseoutReport([], [refund]).totalRevenue, -2000);
+  const samePeriod = buildCloseoutReport([refunded], [refund]);
+  assert.equal(samePeriod.totalRevenue, 0);
+  assert.equal(samePeriod.refundedAmount, 2000);
+  assert.equal(samePeriod.payments.find((payment) => payment.paymentMethodId === "CASH").totalAmount, 0);
+});

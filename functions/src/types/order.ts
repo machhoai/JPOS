@@ -16,7 +16,8 @@ export type OrderStatus =
   | "LOCAL_PAID"
   | "SYNCING"
   | "SYNC_SUCCESS"
-  | "SYNC_FAILED";
+  | "SYNC_FAILED"
+  | "CANCELLED";
 
 export type OrderPaymentStatus =
   | "DRAFT"
@@ -114,6 +115,7 @@ export interface PayOSPaymentAttempt {
   locallyCancelledAt?: string;
   /** Whether PayOS confirmed the cancellation or could not be reached. */
   remoteCancellationConfirmed?: boolean;
+  latePaymentAfterCancellation?: boolean;
 }
 
 export interface PayOSPaymentDetails {
@@ -203,6 +205,8 @@ export interface PosOrder {
   syncOperationId?: string | null;
   cancelledAt?: string | null;
   cancelledBy?: string | null;
+  refundedAmount?: number;
+  refundedAt?: string | null;
   cancelReason?: string | null;
   refundOrderNumber?: string | null;
   paymentMethod: PaymentMethod;

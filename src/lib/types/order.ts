@@ -10,7 +10,8 @@ export type OrderStatus =
   | "LOCAL_PAID"   // Payment completed locally, awaiting sync to HK API
   | "SYNCING"      // Currently being sent to the remote HK API
   | "SYNC_SUCCESS" // Successfully synced with HK API
-  | "SYNC_FAILED"; // Sync attempt failed (will be retried)
+  | "SYNC_FAILED"  // Sync attempt failed (will be retried)
+  | "CANCELLED";
 
 export type OrderPaymentStatus =
   | "DRAFT"
@@ -216,6 +217,8 @@ export interface PosOrder {
   cancellationOperationId?: string | null;
   cancelledAt?: string | null;
   cancelledBy?: string | null;
+  refundedAmount?: number;
+  refundedAt?: string | null;
   cancelReason?: string | null;
   refundOrderNumber?: string | null;
 

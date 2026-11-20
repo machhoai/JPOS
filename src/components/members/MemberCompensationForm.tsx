@@ -23,7 +23,7 @@ const COMPENSATION_CATEGORIES = [
 ] as const;
 
 const TURN_QUICK_AMOUNTS = [-5, -1, 1, 5, 12] as const;
-const MONEY_QUICK_AMOUNTS = [-100_000, -50_000, 50_000, 100_000, 200_000] as const;
+const MONEY_QUICK_AMOUNTS = [-22, -77, 22, 77] as const;
 const amountFormatter = new Intl.NumberFormat("vi-VN");
 
 export default function MemberCompensationForm({
@@ -65,12 +65,13 @@ export default function MemberCompensationForm({
         <div>
           <label htmlFor="member-compensation-amount" className="block text-sm font-bold">{isMoney ? "Số tiền" : "Số lượt"} điều chỉnh *</label>
           <input id="member-compensation-amount" type="number" inputMode="numeric" min={-10_000_000} max={10_000_000} step={1} value={draft.amount ?? ""} onChange={(event) => onChange({ amount: event.target.value === "" ? null : Number(event.target.value) })} disabled={busy} className="mt-1.5 h-13 w-full rounded-2xl border border-[var(--color-border-subtle)] px-4 text-lg font-extrabold focus:border-[var(--color-accent)] disabled:bg-neutral-50" placeholder={isMoney ? "Nhập số tiền VND; số âm để trừ" : "Số dương để cộng, số âm để trừ"} />
-          <div className="mt-2 grid grid-cols-5 gap-2" aria-label="Chọn nhanh số lượng điều chỉnh">
+          <div className={`mt-2 grid gap-2 ${isMoney ? "grid-cols-4" : "grid-cols-5"}`} aria-label="Chọn nhanh số lượng điều chỉnh">
             {quickAmounts.map((amount) => {
-              const selected = draft.amount === amount;
-              return <button key={amount} type="button" aria-pressed={selected} onClick={() => onChange({ amount })} disabled={busy} className={`min-h-11 rounded-xl border text-sm font-extrabold transition-colors disabled:opacity-50 ${selected ? "border-amber-600 bg-amber-600 text-white shadow-sm" : amount < 0 ? "border-red-200 bg-red-50 text-red-700 hover:border-red-400" : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400"}`}>{amount > 0 ? "+" : ""}{amountFormatter.format(amount)}</button>;
+              const selected = !isMoney && draft.amount === amount;
+              return <button key={amount} type="button" aria-pressed={isMoney ? undefined : selected} onClick={() => onChange({ amount: isMoney ? (draft.amount ?? 0) + amount : amount })} disabled={busy} className={`min-h-11 rounded-xl border text-sm font-extrabold transition-colors disabled:opacity-50 ${selected ? "border-amber-600 bg-amber-600 text-white shadow-sm" : amount < 0 ? "border-red-200 bg-red-50 text-red-700 hover:border-red-400" : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400"}`}>{amount > 0 ? "+" : ""}{amountFormatter.format(amount)}</button>;
             })}
           </div>
+          {isMoney ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">Mỗi lần bấm sẽ cộng hoặc trừ thêm vào số tiền điều chỉnh hiện tại.</p> : null}
         </div>
         <label className="block text-sm font-bold">Chọn nhanh lý do
           <select value={selectedPreset} onChange={(event) => onChange({ reason: event.target.value })} disabled={busy} className="mt-1.5 h-13 w-full rounded-2xl border border-[var(--color-border-subtle)] bg-white px-4 text-sm font-semibold focus:border-[var(--color-accent)] disabled:bg-neutral-50">

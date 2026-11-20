@@ -157,8 +157,15 @@ export async function fetchOrderForReceipt(
 
 export interface OrderHistoryResult {
   orders: PosOrder[];
+  refunds?: CloseoutRefund[];
   fetchedAt: string;
   reconciliationIncomplete?: boolean;
+}
+
+export interface CloseoutRefund {
+  amount: number;
+  paymentMethodId: string;
+  paymentMethodName?: string;
 }
 
 export interface OrderHistoryQuery {

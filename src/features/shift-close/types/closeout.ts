@@ -19,6 +19,7 @@ export interface CloseoutReport {
   orderCount: number;
   productQuantity: number;
   totalRevenue: number;
+  refundedAmount: number;
   products: CloseoutProductSummary[];
   payments: CloseoutPaymentSummary[];
   operatorNames: string[];

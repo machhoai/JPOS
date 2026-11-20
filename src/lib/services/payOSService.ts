@@ -36,11 +36,17 @@ const callPayOSPayment = httpsCallable<
   PayOSPaymentResult
 >(functions, "payosPayment");
 
+const callPayOSCancellation = httpsCallable<
+  PayOSCallableRequest,
+  PayOSPaymentResult
+>(functions, "payosPayment", { timeout: 25_000 });
+
 async function callOrderAction(
   action: Exclude<PayOSPaymentAction, "create">,
   localOrderId: string,
 ): Promise<PayOSPaymentResult> {
-  const response = await callPayOSPayment({
+  const callable = action === "cancel" ? callPayOSCancellation : callPayOSPayment;
+  const response = await callable({
     ...(await withDeviceAuth({ action, payload: { localOrderId } })),
   } as PayOSCallableRequest);
   return response.data;

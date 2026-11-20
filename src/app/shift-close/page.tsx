@@ -176,7 +176,7 @@ const ShiftClosePage: React.FC = () => {
             });
             if (requestId !== requestIdRef.current) return;
             setLoadedAccessKey(accessKey);
-            const nextReport = buildCloseoutReport(result.orders);
+            const nextReport = buildCloseoutReport(result.orders, result.refunds);
             setReport(nextReport);
             if (result.reconciliationIncomplete) {
                 showWarning("Chưa kiểm tra hết các đơn PayOS", "Báo cáo vẫn liệt kê các đơn chờ đối soát. Vui lòng làm mới để tiếp tục kiểm tra.");

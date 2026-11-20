@@ -67,6 +67,8 @@ export default function CheckoutModal(props: CheckoutModalProps) {
     else void (props.onStartTransfer ?? props.payOSPayment.createPayment)();
   }, [hasSufficientCash, isBusy, isCashPayment, props]);
 
+  const cancelTransfer = () => props.payOSPayment.cancelPayment(props.onClose);
+
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -97,7 +99,7 @@ export default function CheckoutModal(props: CheckoutModalProps) {
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 py-2 sm:px-6">
           {hasPaymentSession ? (
-            <PayOSQrPanel payment={props.payOSPayment} />
+            <PayOSQrPanel payment={{ ...props.payOSPayment, cancelPayment: cancelTransfer }} />
           ) : (
             <>
               {props.receiptLanguage && props.onSetReceiptLanguage ? (

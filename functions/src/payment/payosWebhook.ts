@@ -114,10 +114,12 @@ export const payosWebhook = onRequest(
         response.status(400).json({ success: false });
         return;
       }
-      await cancelSupersededPayOSAttempt(
-        orderQuery.docs[0].ref,
-        webhookData.orderCode,
-      );
+      if (paymentResult !== "CANCELLED_PAYMENT_RECORDED") {
+        await cancelSupersededPayOSAttempt(
+          orderQuery.docs[0].ref,
+          webhookData.orderCode,
+        );
+      }
       logger.info("[PayOS webhook] Đã xử lý webhook", {
         localOrderId: orderQuery.docs[0].id,
         orderCode: webhookData.orderCode,

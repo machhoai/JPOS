@@ -79,7 +79,7 @@ export interface CartState {
     status: OrderStatus,
   ) => void;
   lockCartForPayOS: (localOrderId: string) => boolean;
-  unlockCartAfterPayOSCancellation: (localOrderId: string) => void;
+  unlockCartAfterPayOSCancellation: (localOrderId: string, reuseDraft?: boolean) => void;
   setCheckoutContext: (shopId: number, warehouseId: string) => void;
   hydrateCheckoutJournal: () => Promise<void>;
   dismissRecoveryNotice: () => void;
@@ -581,14 +581,22 @@ export const useCartStore = create<CartState>((set, get) => ({
     return true;
   },
 
-  unlockCartAfterPayOSCancellation: (localOrderId) => {
-    if (get().paymentLockOrderId !== localOrderId) return;
+  unlockCartAfterPayOSCancellation: (localOrderId, reuseDraft = true) => {
+    const state = get();
+    if (state.paymentLockOrderId !== localOrderId) return;
+    const draftOrderId = reuseDraft ? localOrderId : generateLocalOrderId();
     set({
       isPaymentLocked: false,
       paymentLockOrderId: null,
+      draftOrderId,
+      ...(!reuseDraft && state.currentOrderId === localOrderId ? {
+        currentOrderId: null,
+        currentHkOrderNumber: null,
+        currentOrderStatus: null,
+      } : {}),
       checkoutCheckpoint: "CART_READY",
     });
-    saveCartCheckpoint(get(), "CART_READY", { localOrderId });
+    saveCartCheckpoint(get(), "CART_READY", { localOrderId: draftOrderId });
   },
 
   checkout: async (shopId, warehouseId) => {

@@ -717,7 +717,7 @@ export async function checkoutPosOrderForUser(
   const docRef = db.collection(POS_COLLECTIONS.orders).doc(input.localOrderId);
 
   try {
-    const shouldMarkPaid = await db.runTransaction(async (transaction) => {
+    await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(docRef);
       const now = new Date().toISOString();
       const existing = snapshot.exists ? snapshot.data() as PosOrder : null;
@@ -730,7 +730,10 @@ export async function checkoutPosOrderForUser(
           );
         }
         assertMemberAssociation(existing, input);
-        if (existing.status !== "DRAFT") return false;
+        if (existing.status === "CANCELLED" || existing.syncStatus === "CANCELLED") {
+          throw new HttpsError("failed-precondition", "Đơn hàng đã bị hủy.");
+        }
+        if (existing.status !== "DRAFT") return;
       }
 
       const voucherCalculation = input.voucherCodes.length > 0
@@ -752,15 +755,12 @@ export async function checkoutPosOrderForUser(
             vouchers: [],
           };
       const voucherFields = voucherFieldsForOrder(voucherCalculation);
-      const completesAtomically = input.voucherCodes.length > 0;
-      const completionFields = completesAtomically
-        ? {
-            status: "LOCAL_PAID" as const,
-            paymentStatus: "PAID" as const,
-            syncStatus: "PENDING" as const,
-            paidAt: now,
-          }
-        : {};
+      const completionFields = {
+        status: "LOCAL_PAID" as const,
+        paymentStatus: "PAID" as const,
+        syncStatus: "PENDING" as const,
+        paidAt: now,
+      };
 
       if (!existing) {
         transaction.create(docRef, {
@@ -772,7 +772,7 @@ export async function checkoutPosOrderForUser(
           ...completionFields,
           updatedAt: now,
         });
-        return !completesAtomically;
+        return;
       }
 
       transaction.update(docRef, {
@@ -796,17 +796,7 @@ export async function checkoutPosOrderForUser(
         items,
         updatedAt: now,
       });
-      return !completesAtomically;
     });
-
-    if (shouldMarkPaid) {
-      const paidAt = new Date().toISOString();
-      await docRef.update({
-        status: "LOCAL_PAID",
-        paidAt,
-        updatedAt: paidAt,
-      });
-    }
 
     const paidSnapshot = await docRef.get();
     const paidOrder = paidSnapshot.data() as PosOrder;
@@ -1123,15 +1113,15 @@ export async function listCloseoutOrdersForUser(
     );
   }
 
-  const snapshot = await db
-    .collection(POS_COLLECTIONS.orders)
-    .where("paidAt", ">=", input.startAt)
-    .where("paidAt", "<", input.endAt)
-    .orderBy("paidAt", "desc")
-    .limit(5_001)
-    .get();
+  const ordersCollection = db.collection(POS_COLLECTIONS.orders);
+  const [snapshot, refundSnapshot] = await Promise.all([
+    ordersCollection.where("paidAt", ">=", input.startAt)
+      .where("paidAt", "<", input.endAt).orderBy("paidAt", "desc").limit(5_001).get(),
+    ordersCollection.where("refundedAt", ">=", input.startAt)
+      .where("refundedAt", "<", input.endAt).orderBy("refundedAt", "desc").limit(5_001).get(),
+  ]);
 
-  if (snapshot.size > 5_000) {
+  if (snapshot.size > 5_000 || refundSnapshot.size > 5_000) {
     throw new HttpsError(
       "resource-exhausted",
       "Báo cáo có quá nhiều đơn hàng. Vui lòng chia nhỏ khoảng thời gian.",
@@ -1142,12 +1132,25 @@ export async function listCloseoutOrdersForUser(
     .map((document) => document.data() as PosOrder)
     .filter((order) =>
       order.warehouseId === input.warehouseId &&
-      isRevenueEligibleOrder(order) &&
+      (isRevenueEligibleOrder(order) ||
+        (order.status === "CANCELLED" && Boolean(order.refundedAt) && (order.refundedAmount ?? 0) > 0)) &&
       (input.scope === "ALL_USERS" || order.createdBy === userId)
     );
 
   return {
     orders,
+    refunds: refundSnapshot.docs.map((document) => document.data() as PosOrder)
+      .filter((order) =>
+        order.warehouseId === input.warehouseId &&
+        order.paymentStatus === "REFUNDED" &&
+        (order.refundedAmount ?? 0) > 0 &&
+        (input.scope === "ALL_USERS" || order.cancelledBy === userId),
+      )
+      .map((order) => ({
+        amount: order.refundedAmount!,
+        paymentMethodId: order.paymentMethodId || order.paymentMethod,
+        paymentMethodName: order.paymentMethodName,
+      })),
     fetchedAt: new Date().toISOString(),
   };
 }
