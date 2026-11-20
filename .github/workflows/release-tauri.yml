@@ -81,9 +81,8 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Thêm Nhập theo mẫu tại màn hình Đổi Voucher & Quà Tặng để nhân viên chỉ cần gõ phần giữa của mã.
-            - Hiển thị tiền tố và hậu tố theo chiến dịch đang áp dụng tại cửa hàng. Tự chọn hậu tố khi tiền tố chỉ có một lựa chọn.
-            - Tiếp tục quét hoặc nhập trực tiếp mã voucher đầy đủ.
+            - Nút Hủy thanh toán và sửa giỏ đưa thu ngân về giỏ, giữ nguyên sản phẩm kể cả khi PayOS không phản hồi hoặc máy chủ không tìm thấy đơn nháp.
+            - Khi chưa xác nhận được việc hủy QR, giữ phiên cũ riêng và nhắc đối chiếu giao dịch ngân hàng trước khi thu tiền lại.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: false

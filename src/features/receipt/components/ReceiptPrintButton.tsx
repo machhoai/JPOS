@@ -28,6 +28,7 @@ interface ReceiptPrintButtonProps {
   settings?: ReceiptSettings;
   label?: string;
   className?: string;
+  disabled?: boolean;
   invoiceRequestUrlOverride?: string;
   printMode?: ReceiptPrintMode;
   language?: ReceiptLanguage;
@@ -306,6 +307,7 @@ const ReceiptPrintButton: React.FC<ReceiptPrintButtonProps> = ({
   settings: settingsOverride,
   label = "In biên lai",
   className = "",
+  disabled = false,
   invoiceRequestUrlOverride,
   printMode = "silent",
   language = "vi",
@@ -357,7 +359,7 @@ const ReceiptPrintButton: React.FC<ReceiptPrintButtonProps> = ({
     <button
       type="button"
       onClick={() => void handlePrint()}
-      disabled={isPrinting}
+      disabled={disabled || isPrinting}
       className={className}
     >
       <Printer className="size-4" aria-hidden="true" />

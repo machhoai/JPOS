@@ -31,6 +31,7 @@ import type {
   CheckoutJournalRecord,
 } from "@/lib/types/checkoutRecovery";
 import type { PosVoucherResolution } from "@/lib/types/voucher";
+import { getVietnamDateInputValue } from "@/lib/utils/orderHistoryDate";
 
 interface CheckoutContext {
   shopId: number;
@@ -424,6 +425,21 @@ export const useCartStore = create<CartState>((set, get) => ({
       return;
     }
     if (journal.warehouseId !== context.warehouseId) {
+      set({ journalHydrated: true });
+      return;
+    }
+
+    // Journal checkpoints can be rewritten after the draft order was created.
+    const orderTimestamp = /^ORD-(\d{10,13})-[A-Z0-9]{6}$/.exec(
+      journal.localOrderId ?? "",
+    )?.[1];
+    const startedAt = orderTimestamp
+      ? new Date(Number(orderTimestamp) * (orderTimestamp.length === 10 ? 1000 : 1))
+      : new Date(journal.startedAt);
+    if (
+      !Number.isFinite(startedAt.getTime()) ||
+      getVietnamDateInputValue(startedAt) !== getVietnamDateInputValue()
+    ) {
       set({ journalHydrated: true });
       return;
     }

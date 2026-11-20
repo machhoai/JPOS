@@ -24,6 +24,7 @@ interface TicketPrintButtonProps {
   settings?: TicketSettings;
   label?: string;
   className?: string;
+  disabled?: boolean;
   printMode?: TicketPrintMode;
 }
 
@@ -227,6 +228,7 @@ const TicketPrintButton: React.FC<TicketPrintButtonProps> = ({
   settings: settingsOverride,
   label = "In vé",
   className = "",
+  disabled = false,
   printMode = "silent",
 }) => {
   const storedSettings = useTicketSettingsStore((state) => state.settings);
@@ -254,7 +256,7 @@ const TicketPrintButton: React.FC<TicketPrintButtonProps> = ({
     <button
       type="button"
       onClick={() => void handlePrint()}
-      disabled={isPrinting || ticketCount === 0}
+      disabled={disabled || isPrinting || ticketCount === 0}
       className={className}
       title={ticketCount === 0 ? "Đơn hàng không có vé" : `In ${ticketCount} vé`}
     >
