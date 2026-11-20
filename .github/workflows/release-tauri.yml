@@ -81,8 +81,8 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Nút Hủy thanh toán và sửa giỏ đưa thu ngân về giỏ, giữ nguyên sản phẩm kể cả khi PayOS không phản hồi hoặc máy chủ không tìm thấy đơn nháp.
-            - Khi chưa xác nhận được việc hủy QR, giữ phiên cũ riêng và nhắc đối chiếu giao dịch ngân hàng trước khi thu tiền lại.
+            - Hiển thị khoản hoàn tiền trong báo cáo và phiếu chốt ca.
+            - Cải thiện cách xử lý giao dịch PayOS xác nhận sau khi đơn đã hủy.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: false
