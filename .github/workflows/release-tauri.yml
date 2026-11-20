@@ -81,8 +81,8 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Áp dụng giá và VAT Việt Nam cho gói thành viên tại cửa hàng đã bật thí điểm.
-            - Giữ số tiền Việt Nam đã chốt khi thanh toán và dùng số tiền HK để xác nhận cấp quyền lợi.
+            - Sửa luồng đăng ký mới để mở màn nạp gói sau khi tạo thành viên và gắn thẻ.
+            - Dùng chung luồng tiền mặt, chuyển khoản QR và thử lại đơn nạp gói.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: false

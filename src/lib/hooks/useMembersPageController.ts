@@ -20,7 +20,7 @@ import { useMemberCustomerDisplayPublisher } from "@/lib/hooks/useMemberCustomer
 import { useMemberActivityController } from "@/lib/hooks/useMemberActivityController";
 import { useMemberCompensationController } from "@/lib/hooks/useMemberCompensationController";
 import { useMemberPackageCustomerDisplayPublisher } from "@/lib/hooks/useMemberPackageCustomerDisplayPublisher";
-import { useMemberPackageSaleController } from "@/lib/hooks/useMemberPackageSaleController";
+import { isMemberPackageProduct, useMemberPackageSaleController } from "@/lib/hooks/useMemberPackageSaleController";
 import { fetchOrderForReceipt } from "@/lib/services/orderService";
 import { logCheckoutTelemetry } from "@/lib/services/checkoutTelemetryService";
 import { lookupMember, registerMember, toMemberServiceError, validateMemberRegistrationDraft } from "@/lib/services/memberService";
@@ -68,6 +68,7 @@ export function useMembersPageController() {
     const [selectedPhone, setSelectedPhone] = useState<MemberPhoneSuggestion | null>(null);
     const [partnerRecovery, setPartnerRecovery] = useState<(PartnerCardRecoveryMatch & { actorId: string }) | null>(null);
     const hasStartedInitialCardReadRef = useRef(false);
+    const registrationInFlightRef = useRef(false);
 
     const mode = useMemberStore((state) => state.lookupMode);
     const query = useMemberStore((state) => state.lookupQuery);
@@ -196,6 +197,7 @@ export function useMembersPageController() {
         reloadProducts: fetchProducts,
         onSaleCompleted: handleMemberPackageAutoPrint,
     });
+    const { openCheckoutForProduct } = memberPackageSale;
     const canEditMember = auth.hasPermission("pos.members.edit", auth.effectiveWarehouseId || undefined);
     const canReadMemberHistory = auth.hasPermission("pos.members.history", auth.effectiveWarehouseId || undefined);
     const canRetryMemberSync = auth.hasPermission("pos.members.retry_sync", auth.effectiveWarehouseId || undefined);
@@ -525,6 +527,13 @@ export function useMembersPageController() {
             showWarning("Giỏ hàng đang được khóa", "Hãy hoàn tất hoặc hủy thanh toán hiện tại trước khi sửa đơn.");
             return false;
         }
+        const items = useCartStore.getState().items;
+        const hasPackage = products.some((candidate) => isMemberPackageProduct(candidate) &&
+            items.some((item) => item.goodsId === candidate.goodsId));
+        if (items.length > 0 && (isMemberPackageProduct(product) || hasPackage)) {
+            showWarning("Thanh toán gói riêng", "Mỗi đơn nạp thẻ chỉ gồm một gói. Hãy thanh toán vé và hàng lưu niệm riêng.");
+            return false;
+        }
         addCartItem({
             goodsId: product.goodsId,
             goodsName: product.goodsName,
@@ -532,7 +541,7 @@ export function useMembersPageController() {
             quantity: 1,
         });
         return true;
-    }, [addCartItem, isPaymentLocked]);
+    }, [addCartItem, isPaymentLocked, products]);
 
     const handleBarcodeScan = useCallback((barcode: string) => {
         const product = findProductByBarcode(products, barcode);
@@ -557,11 +566,12 @@ export function useMembersPageController() {
         onScan: handleBarcodeScan,
     });
 
-    const handleRegister = useCallback(async (): Promise<boolean> => {
+    const handleRegister = useCallback(async (): Promise<MemberProfile | null> => {
+        if (registrationInFlightRef.current) return null;
         const warehouseId = auth.effectiveWarehouseId;
         if (!warehouseId) {
             showError("Chưa chọn điểm bán", "Vui lòng chọn điểm bán trước khi đăng ký.");
-            return false;
+            return null;
         }
 
         if (
@@ -575,7 +585,7 @@ export function useMembersPageController() {
                     ? "Thành viên đã được tạo. Vui lòng đọc thẻ vật lý để hoàn tất bước gắn thẻ."
                     : "Vui lòng đọc và xác thực thẻ vật lý bằng đầu đọc trước khi đăng ký.",
             );
-            return false;
+            return null;
         }
 
         let normalizedDraft: MemberRegistrationDraft;
@@ -585,9 +595,10 @@ export function useMembersPageController() {
         } catch (error: unknown) {
             const memberError = toMemberServiceError(error);
             showError("Thông tin chưa hợp lệ", memberError.message);
-            return false;
+            return null;
         }
 
+        registrationInFlightRef.current = true;
         startMutation("REGISTER");
         let registeredMember = pendingRegistrationMember;
         let createdAt = fetchedAt;
@@ -664,7 +675,7 @@ export function useMembersPageController() {
             setRegistrationCardReaderError(null);
             startNewRegistration();
             setFetchedAt(result.createdAt ?? new Date().toISOString());
-            return true;
+            return result.member;
         } catch (error: unknown) {
             const memberError = toMemberServiceError(error);
             console.error("[Thành viên] Đăng ký thất bại:", memberError);
@@ -674,19 +685,55 @@ export function useMembersPageController() {
                     : memberError.message,
                 memberError.code,
             );
-            return false;
+            return null;
+        } finally {
+            registrationInFlightRef.current = false;
         }
     }, [auth.effectiveWarehouseId, completeLookup, draft, failMutation, fetchedAt, pendingRegistrationMember, registrationCard, registrationCardReaderStatus, setCartMember, shopId, startMutation, startNewRegistration, updateDraft]);
 
     const handleRegisterAndCheckout = useCallback(async () => {
-        if (!completedRegistrationMember) {
-            const registered = await handleRegister();
-            if (!registered) return;
+        if (isPaymentLocked || registrationInFlightRef.current) return;
+        const initialCart = useCartStore.getState();
+        if (initialCart.items.length === 0) return;
+        const selectedProducts = initialCart.items.map((item) => products.find((product) => product.goodsId === item.goodsId));
+        if (selectedProducts.some((product) => !product)) {
+            showWarning("Sản phẩm chưa sẵn sàng", "Hãy tải lại danh mục và kiểm tra các sản phẩm đã chọn.");
+            return;
+        }
+        const packageProduct = selectedProducts.find((product) => product && isMemberPackageProduct(product));
+        if (packageProduct && (initialCart.items.length !== 1 || initialCart.items[0].quantity !== 1 || initialCart.vouchers.length > 0)) {
+            showWarning("Thanh toán gói riêng", "Hãy chọn một gói nạp thẻ và thanh toán vé, hàng lưu niệm hoặc đơn dùng voucher riêng.");
+            return;
+        }
+
+        const registered = completedRegistrationMember ?? await handleRegister();
+        if (!registered) return;
+
+        const cart = useCartStore.getState();
+        if (cart.isPaymentLocked || cart.checkoutContext !== initialCart.checkoutContext ||
+            cart.items !== initialCart.items || cart.vouchers !== initialCart.vouchers) {
+            showWarning("Giỏ hàng đã thay đổi", "Hãy kiểm tra lại đơn trước khi thanh toán.");
+            return;
+        }
+        if (packageProduct) {
+            if (!openCheckoutForProduct(packageProduct.goodsId)) {
+                showWarning("Chưa thể mở thanh toán gói", "Hãy tải lại danh mục và kiểm tra gói đã chọn.");
+                return;
+            }
+
+            hasStartedInitialCardReadRef.current = true;
+            setSelectedPhone(null);
+            setMode("PHONE");
+            setQuery(registered.phone);
+            completeLookup(registered);
+            cart.clearCart();
+            setOperation("LOOKUP");
+            return;
         }
 
         requestCheckoutModal();
         router.push("/");
-    }, [completedRegistrationMember, handleRegister, requestCheckoutModal, router]);
+    }, [completeLookup, completedRegistrationMember, handleRegister, isPaymentLocked, openCheckoutForProduct, products, requestCheckoutModal, router, setMode, setQuery]);
 
     
     return { auth, operation, partnerRecovery: partnerRecovery?.input.warehouseId === auth.effectiveWarehouseId && partnerRecovery.actorId === auth.user?.uid ? partnerRecovery : null, setPartnerRecovery, fetchedAt, setFetchedAt, registrationCardReaderStatus, registrationCardReaderError, pendingRegistrationMember, completedRegistrationMember, mode, query, request, cardReaderStatus, cardReaderError, member, draft, mutation, products, productsLoading, productsError, fetchProducts, cartItems, isPaymentLocked, updateCartQuantity, resetSession, shopId, memberActivity, compensation, canCompensate, memberPackageSale, canEditMember, canReadMemberHistory, canRetryMemberSync, profileEdit, handleLookup, handleCardRead, handleRegistrationCardRead, handleCancelRegistrationCardRead, handleClearRegistrationCard, handleResetRegistrationFlow, handleRegistrationDraftChange, handleCancelCardRead, handleModeChange, handleQueryChange, handleOperationChange, handleAddProduct, handleRegister, handleRegisterAndCheckout, phoneSearch, handleSuggestionSelect, phoneSelected: selectedPhone?.phone === query, renewalBusy, setRenewalBusy, refreshAfterRenewal };

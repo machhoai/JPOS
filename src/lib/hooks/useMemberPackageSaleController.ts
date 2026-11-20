@@ -37,6 +37,10 @@ interface MemberPackageSaleControllerInput {
 
 const MEMBER_PACKAGE_CATEGORIES = new Set([1, 2, 6]);
 
+export function isMemberPackageProduct(product: Product): boolean {
+  return MEMBER_PACKAGE_CATEGORIES.has(product.category);
+}
+
 function toCachedMemberPackage(product: Product) {
   const paymentAmountVnd = product.afterTaxPrice > 0
     ? product.afterTaxPrice
@@ -102,7 +106,7 @@ export function useMemberPackageSaleController({
   const [paymentCollected, setPaymentCollected] = useState(false);
   const cachedPackages = useMemo(
     () => products
-      .filter((product) => MEMBER_PACKAGE_CATEGORIES.has(product.category))
+      .filter(isMemberPackageProduct)
       .map(toCachedMemberPackage),
     [products],
   );
@@ -136,16 +140,20 @@ export function useMemberPackageSaleController({
 
   const refreshMember = useCallback(async () => {
     if (!member || !warehouseId) return;
-    const canReuseQuery = lookupQuery.trim().length > 0;
+    const useCardQuery = lookupMode === "CARD" && lookupQuery.trim().length > 0;
     const result = await lookupMember({
       shopId,
       warehouseId,
-      mode: canReuseQuery ? lookupMode : "PHONE",
-      query: canReuseQuery ? lookupQuery : member.phone,
-      cardLookupKind: canReuseQuery && lookupMode === "CARD" && cardReaderStatus === "SUCCEEDED"
+      mode: useCardQuery ? "CARD" : "PHONE",
+      query: useCardQuery ? lookupQuery : member.phone,
+      selectedUid: useCardQuery ? undefined : member.uid,
+      cardLookupKind: useCardQuery && cardReaderStatus === "SUCCEEDED"
         ? "SERIAL_NUMBER"
         : undefined,
     });
+    if (result.member.uid !== member.uid) {
+      throw new Error("Kết quả tải lại không khớp thành viên vừa nạp thẻ.");
+    }
     completeLookup(result.member);
   }, [cardReaderStatus, completeLookup, lookupMode, lookupQuery, member, shopId, warehouseId]);
 
@@ -239,13 +247,25 @@ export function useMemberPackageSaleController({
   });
   const createPayOSPayment = payOSPayment.createPayment;
 
-  const openCheckout = useCallback(() => {
-    if (!selectedPackage) return;
+  const beginCheckout = useCallback(() => {
     setPaymentCollected(false);
     resetMutation();
     setLocalOrderId(generateLocalOrderId());
     setCheckoutOpen(true);
-  }, [resetMutation, selectedPackage]);
+  }, [resetMutation]);
+
+  const openCheckout = useCallback(() => {
+    if (selectedPackage) beginCheckout();
+  }, [beginCheckout, selectedPackage]);
+
+  const openCheckoutForProduct = useCallback((goodsId: string): boolean => {
+    if (!cachedPackages.some((item) => item.goodsId === goodsId)) return false;
+    setPackages(cachedPackages);
+    selectPackage(goodsId);
+    setPaymentMethod("CASH");
+    beginCheckout();
+    return true;
+  }, [beginCheckout, cachedPackages, selectPackage, setPackages]);
 
   const closeCheckout = useCallback(() => {
     if (payOSPayment.hasActiveTransfer || payOSPayment.isBusy) return;
@@ -410,6 +430,7 @@ export function useMemberPackageSaleController({
     setPaymentMethod,
     loadPackages,
     openCheckout,
+    openCheckoutForProduct,
     closeCheckout,
     sellForCash,
     startQrPayment,

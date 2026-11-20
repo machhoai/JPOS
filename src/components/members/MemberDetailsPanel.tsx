@@ -46,7 +46,7 @@ interface MemberDetailsPanelProps {
 }
 
 const MemberDetailsPanel: React.FC<MemberDetailsPanelProps> = ({ member, shopId, warehouseId, fetchedAt, activity, packageSale, profileEdit, canEdit, canHistory, canRetry, paymentLocked, canRenew, renewalBusy, onRenewalBusyChange, onRenewalSucceeded }) => {
-    const [tab, setTab] = useState<MemberDetailTab>("PROFILE");
+    const [tab, setTab] = useState<MemberDetailTab>(packageSale.isCheckoutOpen ? "TOP_UP" : "PROFILE");
 
     return <div className="min-w-0 space-y-3 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:space-y-0 lg:gap-3">
         <nav aria-label="Chi tiết thành viên" className="shrink-0 overflow-x-auto rounded-full border border-[var(--color-border)] bg-white p-1.5 shadow-sm">
