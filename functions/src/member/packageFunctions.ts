@@ -247,6 +247,15 @@ function isPaid(response: HKApiResponse): boolean {
   return response.success && Number(response.data?.payStatus) === 2;
 }
 
+const WAIT_FOR_HK_PAYMENT_STATUS = "HK chưa xác nhận đơn có thể thanh toán. Hãy kiểm tra hoặc thử lại đơn hiện tại.";
+
+function hkPaymentRecordIsMissing(response: HKApiResponse): boolean {
+  // HK uses 2001 for several unrelated errors. Match the specific business response.
+  const message = response.msg?.normalize("NFC").trim().toLocaleLowerCase("vi");
+  return !response.success && response.code === 2001 && response.data == null &&
+    message === "thông tin đặt hàng thanh toán không tồn tại";
+}
+
 async function callRemote<T>(
   action: string,
   request: () => Promise<HKApiResponse<T>>,
@@ -341,6 +350,7 @@ async function finalizeMemberPackageOrder(
   });
   let hkOrderNumber = order.hkOrderNumber;
   let remoteActualPayment = readRemoteOrderPayAmount(order.remoteActualPayment);
+  let createdHere = false;
   let currentAction = "order_create";
   try {
     if (!hkOrderNumber) {
@@ -370,6 +380,7 @@ async function finalizeMemberPackageOrder(
         remoteActualPayment,
         updatedAt: new Date().toISOString(),
       });
+      createdHere = true;
     }
 
     currentAction = "order_pay_query";
@@ -379,10 +390,15 @@ async function finalizeMemberPackageOrder(
     );
     if (!isPaid(statusResponse)) {
       const payStatus = statusResponse.data?.payStatus;
-      if (!statusResponse.success || ![0, 3, "0", "3"].includes(payStatus as number | string)) {
+      const confirmedPayable = statusResponse.success && (payStatus === 0 || payStatus === "0" || payStatus === 3 || payStatus === "3");
+      const firstPayment = !order.remotePaymentAttemptedAt && hkPaymentRecordIsMissing(statusResponse) &&
+        (createdHere || order.sync?.lastError === WAIT_FOR_HK_PAYMENT_STATUS);
+      if (!confirmedPayable && !firstPayment) {
         throw new MemberRemoteApiError("order_pay_query", statusResponse.code,
-          "HK chưa xác nhận đơn có thể thanh toán. Hãy kiểm tra hoặc thử lại đơn hiện tại.");
+          WAIT_FOR_HK_PAYMENT_STATUS);
       }
+      const attemptedAt = new Date().toISOString();
+      await docRef.update({ remotePaymentAttemptedAt: attemptedAt, updatedAt: attemptedAt });
       currentAction = "order_pay";
       const payResponse = await callRemote(
         "order_pay",

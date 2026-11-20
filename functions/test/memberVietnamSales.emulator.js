@@ -41,10 +41,15 @@ test("member package Vietnam pricing and HK entitlement settlement", async (t) =
   t.mock.method(hk, "createRemoteOrder", async (body) => {
     assert.deepEqual(body, { uid: scope.uid, goodsItems: [{ goodsId, quantity: "1" }] });
     const orderNumber = `HK-${statusByNumber.size + 1}`;
-    statusByNumber.set(orderNumber, 0);
+    statusByNumber.set(orderNumber, null);
     return { success: true, data: { orderNumber, actualPayment: 200 } };
   });
-  t.mock.method(hk, "queryPaymentStatus", async ({ orderNumber }) => ({ success: true, data: { payStatus: statusByNumber.get(orderNumber) } }));
+  t.mock.method(hk, "queryPaymentStatus", async ({ orderNumber }) => {
+    const status = statusByNumber.get(orderNumber);
+    if (status === null) return { success: false, code: 2001, msg: "Thông tin đặt hàng thanh toán không tồn tại", data: null };
+    if (status === "invalid-child") return { success: false, code: 2001, msg: "Xử lý đơn đặt hàng con không thành công", data: null };
+    return { success: true, data: { payStatus: status } };
+  });
   t.mock.method(hk, "confirmRemotePayment", async (body) => {
     requests.push(body);
     statusByNumber.set(body.orderNumber, nextPayStatus);
@@ -79,6 +84,8 @@ test("member package Vietnam pricing and HK entitlement settlement", async (t) =
   nextPayStatus = 1;
   await assert.rejects(sellMemberPackageForCashForUser(userId, cash));
   await assert.rejects(finalizeMemberPackageSaleForUser(userId, cash), /HK chưa xác nhận/);
+  statusByNumber.set("HK-1", null);
+  await assert.rejects(finalizeMemberPackageSaleForUser(userId, cash), /HK chưa xác nhận/);
   assert.equal(requests.length, 1);
   statusByNumber.set("HK-1", 2);
   assert.equal((await finalizeMemberPackageSaleForUser(userId, cash)).status, "SYNC_SUCCESS");
@@ -103,6 +110,20 @@ test("member package Vietnam pricing and HK entitlement settlement", async (t) =
   assert.equal((await qrRef.get()).get("totalAmount"), 500);
   assert.equal((await qrRef.get()).get("items")[0].vatRateName, "10%");
   assert.deepEqual(requests, [{ orderNumber: "HK-1", payAmount: 200 }, { orderNumber: "HK-2", payAmount: 200 }]);
+
+  const legacy = draftInput(700);
+  const legacyRef = ref(`pos_orders/${legacy.localOrderId}`);
+  await prepareMemberPackageOrderForUser(userId, legacy);
+  await legacyRef.update({ status: "SYNC_FAILED", syncStatus: "SYNC_FAILED", hkOrderNumber: "HK-existing",
+    remoteActualPayment: 200, paidAt: new Date().toISOString(),
+    "sync.lastError": "HK chưa xác nhận đơn có thể thanh toán. Hãy kiểm tra hoặc thử lại đơn hiện tại." });
+  statusByNumber.set("HK-existing", "invalid-child");
+  await assert.rejects(finalizeMemberPackageSaleForUser(userId, legacy), /HK chưa xác nhận/);
+  assert.equal(requests.length, 2);
+  statusByNumber.set("HK-existing", null);
+  assert.equal((await finalizeMemberPackageSaleForUser(userId, legacy)).remoteOrderNumber, "HK-existing");
+  assert.deepEqual(requests.at(-1), { orderNumber: "HK-existing", payAmount: 200 });
+  assert.ok((await legacyRef.get()).get("remotePaymentAttemptedAt"));
 
   await settings.update({ send_sale_to_hk: false });
   assert.equal(await catalogPrice(), undefined);

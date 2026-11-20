@@ -180,6 +180,7 @@ export interface PosOrder {
   hkOrderNumber: string | null;
   /** Amount returned by order_create, retained for member-sale reconciliation. */
   remoteActualPayment?: number | null;
+  remotePaymentAttemptedAt?: string;
   /** Opaque bearer token encoded in the public invoice-request QR. */
   invoiceRequestToken?: string;
   /** ISO timestamp when the public invoice-request capability was created. */
