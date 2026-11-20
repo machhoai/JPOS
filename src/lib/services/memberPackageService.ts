@@ -1,7 +1,7 @@
 import { httpsCallable } from "firebase/functions";
 import { functions } from "@/lib/firebase/client";
 import { withDeviceAuth } from "@/lib/services/deviceEnrollmentService";
-import { toMemberServiceError } from "@/lib/services/memberService";
+import { MemberServiceError, toMemberServiceError } from "@/lib/services/memberService";
 import type { MemberPointPackage } from "@/lib/types/member";
 import type { OrderStatus } from "@/lib/types/order";
 import type { OrderMemberSnapshot } from "@/lib/types/order";
@@ -15,6 +15,7 @@ export interface MemberPackageScope {
 export interface MemberPackageSaleInput extends MemberPackageScope {
   localOrderId: string;
   goodsId: string;
+  quotedPrice?: number;
   member: OrderMemberSnapshot;
 }
 
@@ -53,6 +54,9 @@ async function callMemberPackageAction<TPayload, TResult>(
     const result = await callable(await withDeviceAuth({ action, payload }));
     return result.data;
   } catch (error: unknown) {
+    if (error instanceof Error && (error as { details?: { action?: string } }).details?.action === "MEMBER_PACKAGE_QUOTE_CHANGED") {
+      throw new MemberServiceError(error.message, "MEMBER_PACKAGE_QUOTE_CHANGED");
+    }
     throw toMemberServiceError(error);
   }
 }

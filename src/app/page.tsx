@@ -380,6 +380,11 @@ export default function CashierPage() {
         );
         return false;
       }
+      if (product.category === 1 && product.vietnamSettingsVersion !== undefined) {
+        showWarning("Bán gói trong mục Thành viên", "Tra cứu thành viên rồi chọn gói để JPOS cấp quyền lợi qua HK.");
+        router.push("/members");
+        return false;
+      }
       const products = useProductStore.getState().products;
       const localOnly = product.sendSaleToHk === false;
       if (useCartStore.getState().items.some((item) => {
@@ -411,6 +416,7 @@ export default function CashierPage() {
       effectiveWarehouseId,
       isPaymentLocked,
       prepareCurrentOrder,
+      router,
       shopId,
     ]
   );

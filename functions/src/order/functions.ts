@@ -9,7 +9,7 @@ import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { isProductAvailableForWarehouse } from "../services/productVisibilityPolicy";
 import { resolveOrderItemTaxPricing } from "../services/productTax";
-import { loadVietnamSaleSettings, resolveVietnamSaleProduct, vietnamBusinessDate } from "../services/vietnamSalePricing";
+import { isVietnamMemberPackageCategory, loadVietnamSaleSettings, resolveVietnamMemberSalePrice, resolveVietnamSaleProduct, vietnamBusinessDate } from "../services/vietnamSalePricing";
 import {
   confirmRemotePayment,
   createRemoteOrder,
@@ -282,10 +282,18 @@ async function loadAuthoritativeItems(
     db.collection(POS_COLLECTIONS.products).doc(item.goodsId),
   );
   const snapshots = await transaction.getAll(...refs);
+  const memberGoodsIds = snapshots.filter((snapshot) => isVietnamMemberPackageCategory(Number(snapshot.get("category")))).map((snapshot) => snapshot.id);
+  const memberSettings = memberGoodsIds.length
+    ? await loadVietnamSaleSettings(warehouseId, memberGoodsIds, transaction, "member")
+    : new Map();
 
   const today = vietnamBusinessDate();
   const items = snapshots.map((snapshot, index): OrderItem => {
     const itemInput = itemInputs[index];
+    const memberOffer = resolveVietnamMemberSalePrice(memberSettings.get(snapshot.id), today);
+    if (memberOffer.pricing || memberOffer.blocked) {
+      throw new HttpsError("failed-precondition", "Vui lòng bán gói qua mục Thành viên để cấp đúng quyền lợi.");
+    }
     const offer = resolveVietnamSaleProduct(snapshot.data(), vietnamSettings.get(snapshot.id), today);
     const product = offer.product;
     if (offer.blocked) {
@@ -426,7 +434,7 @@ function assertQuotedTotal(quotedTotal: number | undefined, total: number) {
   }
 }
 
-function assertOrderCanBeRepriced(order: PosOrder) {
+export function assertOrderCanBeRepriced(order: PosOrder) {
   if (order.fixedTransferDetails?.status === "AWAITING_MANUAL_CONFIRMATION" ||
       order.paymentDetails?.attempts?.some((attempt) =>
         ["CREATING", "PENDING", "PROCESSING", "UNDERPAID", "PAID"].includes(attempt.status) ||
@@ -550,6 +558,9 @@ export async function stagePosOrderForPayOS(
             "failed-precondition",
             "Đơn bán gói không còn phù hợp để tạo mã chuyển khoản.",
           );
+        }
+        if (existing.items[0].vietnamSettingsVersion !== undefined && input.items[0].quotedPrice !== existing.totalAmount) {
+          throw new HttpsError("failed-precondition", "Số tiền trên giỏ khác giá đã chốt của đơn gói. Hãy kiểm tra lại giao dịch.");
         }
         const updatedAt = new Date().toISOString();
         transaction.update(docRef, {

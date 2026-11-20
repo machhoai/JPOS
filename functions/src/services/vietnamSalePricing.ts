@@ -3,6 +3,7 @@ import { POS_COLLECTIONS } from "../config/collections";
 
 const VAT_RATES = ["0%", "5%", "8%", "10%", "KCT", "KKKNT"] as const;
 export type VietnamVatRateName = (typeof VAT_RATES)[number];
+export const isVietnamMemberPackageCategory = (category: number) => category === 1;
 
 export interface VietnamProductSettings {
   version: number;
@@ -26,10 +27,13 @@ export async function loadVietnamSaleSettings(
   warehouseId: string,
   goodsIds?: string[],
   transaction?: FirebaseFirestore.Transaction,
+  scope: "standard" | "member" = "standard",
 ) {
   const ref = db.collection(POS_COLLECTIONS.vietnamProductSettings).doc(warehouseId);
   const store = await (transaction ? transaction.get(ref) : ref.get());
-  if (store.get("enabled") !== true) return new Map<string, VietnamProductSettings>();
+  if (store.get("enabled") !== true || (scope === "member" && store.get("member_packages_enabled") !== true)) {
+    return new Map<string, VietnamProductSettings>();
+  }
   const products = ref.collection("products");
   const refs = goodsIds?.map((goodsId) => products.doc(goodsId));
   const docs = refs
@@ -42,6 +46,23 @@ export async function loadVietnamSaleSettings(
 
 export function vietnamBusinessDate(now = new Date()): string {
   return new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function readVietnamPrice(settings: VietnamProductSettings, businessDate: string) {
+  const gross = settings.selling_price_vnd;
+  const vatRateName = settings.vat_rate;
+  if (gross === null || !Number.isSafeInteger(gross) || gross < 0 || !vatRateName ||
+      !VAT_RATES.includes(vatRateName) || !settings.effective_date || settings.effective_date > businessDate) return null;
+  const taxRate = vatRateName.endsWith("%") ? Number.parseInt(vatRateName, 10) : 0;
+  return { gross, vatRateName, taxRate, net: Math.round(gross / (1 + taxRate / 100)), version: settings.version };
+}
+
+export function resolveVietnamMemberSalePrice(settings: VietnamProductSettings | undefined, businessDate: string) {
+  const pricing = settings ? readVietnamPrice(settings, businessDate) : null;
+  return {
+    blocked: settings?.send_sale_to_hk === false || pricing?.gross === 0,
+    pricing,
+  };
 }
 
 /** Both the register catalog and checkout resolve the same store-specific offer. */
@@ -60,19 +81,10 @@ export function resolveVietnamSaleProduct(
     return { product: upstream, blocked: false };
   }
   const sendSaleToHk = settings.send_sale_to_hk !== false;
-  const gross = settings.selling_price_vnd;
-  const vatRateName = settings.vat_rate;
-  const pricing = gross !== null && Number.isSafeInteger(gross) && gross >= 0 &&
-    vatRateName && VAT_RATES.includes(vatRateName) &&
-    settings.effective_date && settings.effective_date <= businessDate
-    ? { gross, vatRateName }
-    : null;
+  const pricing = readVietnamPrice(settings, businessDate);
   if (!catalogProduct || (!sendSaleToHk && !pricing)) {
     return { product: catalogProduct, blocked: true };
   }
-  const taxRate = pricing && pricing.vatRateName.endsWith("%")
-    ? Number.parseInt(pricing.vatRateName, 10)
-    : 0;
   const localAvailability = sendSaleToHk ? {} : {
     is_deleted: false,
     isEnabled: true,
@@ -83,9 +95,9 @@ export function resolveVietnamSaleProduct(
   return {
     blocked: false,
     product: { ...catalogProduct, category, ...localAvailability, ...(pricing ? {
-      price: Math.round(pricing.gross / (1 + taxRate / 100)),
+      price: pricing.net,
       afterTaxPrice: pricing.gross,
-      taxRate,
+      taxRate: pricing.taxRate,
       taxRateType: 1,
     } : {}) },
     sendSaleToHk,

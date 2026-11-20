@@ -275,6 +275,7 @@ export function useMemberPackageSaleController({
         uid: member.uid,
         localOrderId,
         goodsId: selectedPackage.goodsId,
+        quotedPrice: selectedPackage.paymentAmountVnd,
         member: {
           uid: member.uid,
           memberCode: member.memberCode,
@@ -287,8 +288,7 @@ export function useMemberPackageSaleController({
         success: "Bán gói thành công",
         error: "Không thể hoàn tất bán gói",
         successDescription: "OpenAPI đã xác nhận đơn và cộng điểm cho thành viên.",
-        errorDescription: "Đã ghi nhận tiền mặt. Hãy thử lại đúng đơn hiện tại.",
-        onRetry: () => clickButton("member-package-retry-remote"),
+        errorDescription: (error) => toMemberServiceError(error).message,
       });
       logCheckoutTelemetry("openapi_finalize_completed", {
         localOrderId,
@@ -301,6 +301,11 @@ export function useMemberPackageSaleController({
       await completeSuccessfulSale(localOrderId, result.remoteOrderNumber);
     } catch (error: unknown) {
       const serviceError = toMemberServiceError(error);
+      if (serviceError.code === "MEMBER_PACKAGE_QUOTE_CHANGED") {
+        setPaymentCollected(false);
+        setLocalOrderId(null);
+        await reloadProducts();
+      }
       logCheckoutTelemetry("openapi_finalize_failed", {
         localOrderId,
         orderKind: "MEMBER_PACKAGE",
@@ -316,6 +321,7 @@ export function useMemberPackageSaleController({
     failMutation,
     localOrderId,
     member,
+    reloadProducts,
     selectedPackage,
     shopId,
     startMutation,
@@ -337,6 +343,7 @@ export function useMemberPackageSaleController({
         uid: member.uid,
         localOrderId,
         goodsId: selectedPackage.goodsId,
+        quotedPrice: selectedPackage.paymentAmountVnd,
         member: {
           uid: member.uid,
           memberCode: member.memberCode,
@@ -345,12 +352,11 @@ export function useMemberPackageSaleController({
           levelName: member.levelName,
         },
       }), {
-        loading: "Đang xác minh giá gói với OpenAPI...",
+        loading: "Đang xác minh gói và chốt giá thanh toán...",
         success: "Đơn gói đã sẵn sàng",
         error: "Không thể chuẩn bị đơn gói",
-        successDescription: "Giá thanh toán đã được khóa theo dữ liệu OpenAPI mới nhất.",
-        errorDescription: "Chưa tạo mã chuyển khoản. Vui lòng thử lại.",
-        onRetry: () => clickButton("member-package-start-qr"),
+        successDescription: "Đã chốt số tiền để tạo mã chuyển khoản.",
+        errorDescription: (error) => toMemberServiceError(error).message,
       });
       logCheckoutTelemetry("openapi_prepare_completed", {
         localOrderId,
@@ -360,6 +366,11 @@ export function useMemberPackageSaleController({
       await createPayOSPayment();
     } catch (error: unknown) {
       const serviceError = toMemberServiceError(error);
+      if (serviceError.code === "MEMBER_PACKAGE_QUOTE_CHANGED") {
+        setLocalOrderId(null);
+        setCheckoutOpen(false);
+        await reloadProducts();
+      }
       logCheckoutTelemetry("openapi_prepare_failed", {
         localOrderId,
         orderKind: "MEMBER_PACKAGE",
@@ -374,6 +385,7 @@ export function useMemberPackageSaleController({
     localOrderId,
     member,
     createPayOSPayment,
+    reloadProducts,
     selectedPackage,
     shopId,
     startMutation,

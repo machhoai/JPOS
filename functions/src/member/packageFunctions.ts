@@ -14,6 +14,9 @@ import {
   loadRemoteMemberPackages,
 } from "../services/memberPackageService";
 import { getPosAuthSession } from "../services/posAuthService";
+import { isVietnamMemberPackageCategory, loadVietnamSaleSettings, resolveVietnamMemberSalePrice, vietnamBusinessDate } from "../services/vietnamSalePricing";
+import { createInvoiceRequestToken } from "../order/invoiceRequestToken";
+import { assertOrderCanBeRepriced } from "../order/functions";
 import type { MemberPointPackage } from "../types/member";
 import type { PosOrder } from "../types/order";
 import { MemberRemoteApiError } from "./functions";
@@ -55,19 +58,21 @@ function createPackageDraft(
   selectedPackage: MemberPointPackage,
   operator: OperatorInfo,
   luckyDrawTicketsPerUnit: number,
+  pricing: ReturnType<typeof resolveVietnamMemberSalePrice>["pricing"],
 ): PosOrder {
   const now = new Date().toISOString();
-  const unitTaxAmount = selectedPackage.taxRateType === 2
+  const unitTaxAmount = pricing ? pricing.gross - pricing.net : selectedPackage.taxRateType === 2
     ? Math.min(selectedPackage.paymentAmountVnd, selectedPackage.taxRate)
     : selectedPackage.taxRate > 0
       ? selectedPackage.paymentAmountVnd -
         selectedPackage.paymentAmountVnd / (1 + selectedPackage.taxRate / 100)
       : 0;
-  const effectiveTaxRate = selectedPackage.taxRateType === 2 &&
+  const effectiveTaxRate = pricing ? pricing.taxRate : selectedPackage.taxRateType === 2 &&
     selectedPackage.paymentAmountVnd > unitTaxAmount
     ? (unitTaxAmount /
       (selectedPackage.paymentAmountVnd - unitTaxAmount)) * 100
     : selectedPackage.taxRate;
+  const totalAmount = pricing?.gross ?? selectedPackage.paymentAmountVnd;
   return {
     localOrderId: input.localOrderId,
     hkOrderNumber: null,
@@ -84,23 +89,33 @@ function createPackageDraft(
     paymentMethod: "CASH",
     paymentMethodId: "CASH",
     paymentMethodName: "Tiền mặt",
-    totalAmount: selectedPackage.paymentAmountVnd,
+    totalAmount,
+    ...(pricing ? { invoiceRequestToken: createInvoiceRequestToken(), invoiceRequestCreatedAt: now, sendSaleToHk: true } : {}),
     items: [{
       goodsId: selectedPackage.goodsId,
       goodsName: selectedPackage.name,
-      price: selectedPackage.paymentAmountVnd,
+      price: totalAmount,
       quantity: 1,
       unitPriceBeforeTax: Math.round(
-        selectedPackage.paymentAmountVnd - unitTaxAmount,
+        totalAmount - unitTaxAmount,
       ),
       taxRate: Number(effectiveTaxRate.toFixed(4)),
       taxAmount: Math.round(unitTaxAmount),
+      ...(pricing ? { vatRateName: pricing.vatRateName, vietnamSettingsVersion: pricing.version, sendSaleToHk: true } : {}),
       luckyDrawTicketsPerUnit,
     }],
     sync: { retryCount: 0, lastError: null, syncedAt: null },
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function assertPackageQuote(input: MemberPackageSaleInput, total: number, required: boolean) {
+  if ((required || input.quotedPrice !== undefined) && input.quotedPrice !== total) {
+    throw new HttpsError("failed-precondition", "Giá gói đã thay đổi hoặc ứng dụng chưa cập nhật. Hãy tải lại danh mục và đối chiếu giá trước khi thu tiền.", {
+      action: "MEMBER_PACKAGE_QUOTE_CHANGED",
+    });
+  }
 }
 
 function assertSamePackageOrder(
@@ -125,7 +140,21 @@ function assertSamePackageOrder(
 export async function listMemberPackagesForUser(userId: string, data: unknown) {
   const input = validateMemberPackageCatalogInput(data);
   await assertWarehouseAccess(userId, input.warehouseId);
-  const packages = await loadRemoteMemberPackages(input.uid);
+  const [remotePackages, settings] = await Promise.all([
+    loadRemoteMemberPackages(input.uid),
+    loadVietnamSaleSettings(input.warehouseId, undefined, undefined, "member"),
+  ]);
+  const today = vietnamBusinessDate();
+  const packages = remotePackages.flatMap((product) => {
+    if (!isVietnamMemberPackageCategory(product.category ?? 1)) return [product];
+    const offer = resolveVietnamMemberSalePrice(settings.get(product.goodsId), today);
+    if (offer.blocked) return [];
+    const price = offer.pricing;
+    return [price ? {
+      ...product, paymentAmountVnd: price.gross, originalAmountVnd: price.gross, discountAmountVnd: 0,
+      priceBeforeTaxVnd: price.net, taxRate: price.taxRate, taxRateType: 1,
+    } : product];
+  });
   return { packages, fetchedAt: new Date().toISOString() };
 }
 
@@ -139,15 +168,6 @@ export async function prepareMemberPackageOrderForUser(
     loadRemoteMemberPackage(input.uid, input.goodsId),
     getLuckyDrawSettingsForWarehouse(input.warehouseId),
   ]);
-  if (
-    !Number.isSafeInteger(selectedPackage.paymentAmountVnd) ||
-    selectedPackage.paymentAmountVnd <= 0
-  ) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Giá gói từ OpenAPI không hợp lệ để thanh toán.",
-    );
-  }
 
   const docRef = db.collection(POS_COLLECTIONS.orders).doc(input.localOrderId);
   const luckyDrawTicketsPerUnit = resolveLuckyDrawTicketCount(
@@ -166,6 +186,9 @@ export async function prepareMemberPackageOrderForUser(
         );
       }
       assertSamePackageOrder(existing, input);
+      if (existing.status === "DRAFT" && existing.items[0].vietnamSettingsVersion !== undefined) {
+        assertPackageQuote(input, existing.totalAmount, true);
+      }
       if (!existing.member || existing.items[0].luckyDrawTicketsPerUnit === undefined) {
         const updatedAt = new Date().toISOString();
         const items = existing.items.map((item, index) => index === 0
@@ -180,11 +203,25 @@ export async function prepareMemberPackageOrderForUser(
       }
       return existing;
     }
+    const setting = isVietnamMemberPackageCategory(selectedPackage.category ?? 1)
+      ? (await loadVietnamSaleSettings(input.warehouseId, [input.goodsId], transaction, "member")).get(input.goodsId)
+      : undefined;
+    const { blocked, pricing } = resolveVietnamMemberSalePrice(setting, vietnamBusinessDate());
+    if (blocked) {
+      throw new HttpsError("failed-precondition", "Gói cần giá bán dương và gửi sang HK để cấp quyền lợi.");
+    }
+    const totalAmount = pricing?.gross ?? selectedPackage.paymentAmountVnd;
+    if (!Number.isSafeInteger(totalAmount) || totalAmount <= 0) {
+      throw new HttpsError("failed-precondition", "Giá gói không hợp lệ để thanh toán.");
+    }
+    // Legacy catalog prices can be member-specific on HK. Vietnam offers must always match the display quote.
+    if (pricing) assertPackageQuote(input, totalAmount, true);
     const draft = createPackageDraft(
       input,
       selectedPackage,
       operator,
       luckyDrawTicketsPerUnit,
+      pricing,
     );
     transaction.create(docRef, draft);
     return draft;
@@ -194,7 +231,15 @@ export async function prepareMemberPackageOrderForUser(
     localOrderId: order.localOrderId,
     status: order.status,
     totalAmount: order.totalAmount,
-    selectedPackage,
+    selectedPackage: order.items[0].vietnamSettingsVersion === undefined ? selectedPackage : {
+      ...selectedPackage,
+      paymentAmountVnd: order.totalAmount,
+      originalAmountVnd: order.totalAmount,
+      discountAmountVnd: 0,
+      priceBeforeTaxVnd: order.items[0].unitPriceBeforeTax ?? order.totalAmount,
+      taxRate: order.items[0].taxRate ?? 0,
+      taxRateType: 1,
+    },
   };
 }
 
@@ -227,6 +272,7 @@ async function markSyncFailed(
   const updatedAt = new Date().toISOString();
   await docRef.update({
     status: "SYNC_FAILED",
+    syncStatus: "SYNC_FAILED",
     hkOrderNumber,
     updatedAt,
     sync: {
@@ -288,6 +334,7 @@ async function finalizeMemberPackageOrder(
     }
     transaction.update(docRef, {
       status: "SYNCING",
+      syncStatus: "SYNCING",
       version: (current.version ?? 0) + 1,
       updatedAt: new Date().toISOString(),
     });
@@ -331,6 +378,11 @@ async function finalizeMemberPackageOrder(
       () => queryPaymentStatus({ orderNumber: hkOrderNumber! }),
     );
     if (!isPaid(statusResponse)) {
+      const payStatus = statusResponse.data?.payStatus;
+      if (!statusResponse.success || ![0, 3, "0", "3"].includes(payStatus as number | string)) {
+        throw new MemberRemoteApiError("order_pay_query", statusResponse.code,
+          "HK chưa xác nhận đơn có thể thanh toán. Hãy kiểm tra hoặc thử lại đơn hiện tại.");
+      }
       currentAction = "order_pay";
       const payResponse = await callRemote(
         "order_pay",
@@ -365,6 +417,7 @@ async function finalizeMemberPackageOrder(
     const completedAt = new Date().toISOString();
     await docRef.update({
       status: "SYNC_SUCCESS",
+      syncStatus: "SYNC_SUCCESS",
       hkOrderNumber,
       updatedAt: completedAt,
       sync: {
@@ -398,6 +451,7 @@ export async function sellMemberPackageForCashForUser(
     const snapshot = await transaction.get(docRef);
     const order = snapshot.data() as PosOrder;
     if (order.status !== "DRAFT") return;
+    assertOrderCanBeRepriced(order);
     const paidAt = new Date().toISOString();
     transaction.update(docRef, {
       status: "LOCAL_PAID",

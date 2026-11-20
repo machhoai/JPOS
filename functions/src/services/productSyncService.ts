@@ -38,7 +38,7 @@ import {
   type ProductSyncActorContext,
 } from "./productSyncVisibilityService";
 import { findNewProductIds } from "./productSyncVisibilityPolicy";
-import { loadVietnamSaleSettings, resolveVietnamSaleProduct, vietnamBusinessDate } from "./vietnamSalePricing";
+import { isVietnamMemberPackageCategory, loadVietnamSaleSettings, resolveVietnamMemberSalePrice, resolveVietnamSaleProduct, vietnamBusinessDate } from "./vietnamSalePricing";
 const BATCH_LIMIT = 500;
 const POINT_PACKAGE_CATEGORY_IDS = new Set([1, 2, 6]);
 
@@ -318,18 +318,27 @@ async function commitProductMutations(
 }
 
 export async function loadPosProductCatalog(warehouseId: string): Promise<ProductCatalogResult> {
-  const [snapshot, settings] = await Promise.all([
+  const [snapshot, settings, memberSettings] = await Promise.all([
     db.collection(POS_COLLECTIONS.products).get(),
     loadVietnamSaleSettings(warehouseId),
+    loadVietnamSaleSettings(warehouseId, undefined, undefined, "member"),
   ]);
   const products: SyncProduct[] = [];
   const upstream = new Map(snapshot.docs.map((doc) => [doc.id, doc.data()]));
   const today = vietnamBusinessDate();
 
   for (const goodsId of new Set([...upstream.keys(), ...settings.keys()])) {
-    const offer = resolveVietnamSaleProduct(upstream.get(goodsId), settings.get(goodsId), today);
+    const raw = upstream.get(goodsId);
+    const offer = resolveVietnamSaleProduct(raw, settings.get(goodsId), today);
     if (offer.blocked || !offer.product) continue;
-    const data = offer.product as Partial<SyncProduct>;
+    const memberOffer = isVietnamMemberPackageCategory(Number(raw?.category))
+      ? resolveVietnamMemberSalePrice(memberSettings.get(goodsId), today)
+      : null;
+    if (memberOffer?.blocked) continue;
+    const pricing = memberOffer?.pricing;
+    const data = { ...offer.product, ...(pricing ? {
+      price: pricing.net, afterTaxPrice: pricing.gross, taxRate: pricing.taxRate, taxRateType: 1,
+    } : {}) } as Partial<SyncProduct>;
     const price = Number(data.price);
     const storedAfterTaxPrice = Number(data.afterTaxPrice);
     const afterTaxPrice = Number.isFinite(storedAfterTaxPrice) && (storedAfterTaxPrice > 0 || price === 0)
@@ -361,10 +370,11 @@ export async function loadPosProductCatalog(warehouseId: string): Promise<Produc
 
     products.push({
       goodsId,
-      ...(offer.vietnamSettingsVersion !== undefined ? {
-        vietnamSettingsVersion: offer.vietnamSettingsVersion,
-        sendSaleToHk: offer.sendSaleToHk !== false,
-      } : {}),
+      ...(pricing ? { vietnamSettingsVersion: pricing.version, sendSaleToHk: true } :
+        offer.vietnamSettingsVersion !== undefined ? {
+          vietnamSettingsVersion: offer.vietnamSettingsVersion,
+          sendSaleToHk: offer.sendSaleToHk !== false,
+        } : {}),
       goodsName: String(data.goodsName),
       description: data.description ? String(data.description) : "",
       price,

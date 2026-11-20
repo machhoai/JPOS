@@ -12,6 +12,7 @@ export interface MemberPackageCatalogInput {
 export interface MemberPackageSaleInput extends MemberPackageCatalogInput {
   localOrderId: string;
   goodsId: string;
+  quotedPrice?: number;
   member: OrderMemberSnapshot;
 }
 
@@ -57,6 +58,11 @@ export function validateMemberPackageSaleInput(
     throw new MemberInputError("Mã đơn hàng không hợp lệ.");
   }
   const candidate = record(input.member);
+  const goodsId = requiredString(input.goodsId, "Mã gói thành viên", 128);
+  if (goodsId.includes("/") || goodsId === "." || goodsId === ".." ||
+      (input.quotedPrice !== undefined && (!Number.isSafeInteger(input.quotedPrice) || Number(input.quotedPrice) < 0))) {
+    throw new MemberInputError("Mã gói hoặc giá hiển thị không hợp lệ.");
+  }
   const memberCode = candidate.memberCode;
   if (
     typeof candidate.uid !== "string" ||
@@ -77,7 +83,8 @@ export function validateMemberPackageSaleInput(
   return {
     ...catalog,
     localOrderId,
-    goodsId: requiredString(input.goodsId, "Mã gói thành viên", 128),
+    goodsId,
+    ...(typeof input.quotedPrice === "number" ? { quotedPrice: input.quotedPrice } : {}),
     member: {
       uid: candidate.uid.trim(),
       memberCode: typeof memberCode === "string" ? memberCode.trim() || null : null,
