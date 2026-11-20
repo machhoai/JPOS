@@ -10,6 +10,7 @@ import type {
     OrderItem,
     OrderMemberSnapshot,
     OrderStatus,
+    OrderSyncStatus,
     PaymentMethod,
 } from "@/lib/types/order";
 import type { PaymentMethodOption } from "@/lib/types/payment";
@@ -32,6 +33,7 @@ interface CartPanelProps {
     currentOrderId: string | null;
     currentHkOrderNumber: string | null;
     currentOrderStatus: OrderStatus | null;
+    currentOrderSyncStatus: OrderSyncStatus | null;
     totalAmount: number;
     itemCount: number;
     vouchers: PosVoucherResolution[];
@@ -67,6 +69,7 @@ export default function CartPanel({
     currentOrderId,
     currentHkOrderNumber,
     currentOrderStatus,
+    currentOrderSyncStatus,
     totalAmount,
     itemCount,
     vouchers,
@@ -167,6 +170,7 @@ export default function CartPanel({
                         localOrderId={currentOrderId}
                         hkOrderNumber={currentHkOrderNumber}
                         status={currentOrderStatus}
+                        syncStatus={currentOrderSyncStatus}
                     />
                 </div>
                 {items.length > 0 && (

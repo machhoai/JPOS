@@ -1,5 +1,6 @@
 import type { DocumentReference } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
+import { localOnlySyncUpdate } from "../order/orderLifecycle";
 import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { getPosAuthSession } from "../services/posAuthService";
@@ -311,9 +312,11 @@ export async function confirmFixedTransferForOrder(
       confirmedByName: operatorName,
       updatedAt: confirmedAt,
     };
+    const sync = localOnlySyncUpdate(order);
     const nextOrder: PosOrder = {
       ...order,
       status: "LOCAL_PAID",
+      ...sync,
       paymentMethod: "QR_CODE",
       paymentMethodId: "QR_CODE",
       paymentMethodName: "Chuyển khoản (chưa xác nhận)",
@@ -324,6 +327,7 @@ export async function confirmFixedTransferForOrder(
     };
     transaction.update(docRef, {
       status: nextOrder.status,
+      ...sync,
       paymentMethod: nextOrder.paymentMethod,
       paymentMethodId: nextOrder.paymentMethodId,
       paymentMethodName: nextOrder.paymentMethodName,

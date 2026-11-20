@@ -88,7 +88,7 @@ Server luôn tải lại sản phẩm và giá. Khi thanh toán tiền mặt, vi
 
 ## Đồng bộ Hong Kong
 
-Tài liệu `海外-鲸舰-OpenApi_EN.md` khai báo `order_pay.body.PayAmount` là số nguyên không bắt buộc, mặc định bằng tổng đơn. Đơn có voucher gửi `PayAmount = pos_orders.totalAmount`; đơn cũ tiếp tục gửi `null`.
+Voucher JPOS giảm số tiền thu và số tiền trên hóa đơn Việt Nam. Đơn gửi HK dùng `actualPayment` do `order_create` của HK trả về. Khi đơn chưa có khoản tiền HK hợp lệ đã lưu, gửi `PayAmount = null` để HK dùng số tiền mặc định của chính đơn HK theo hợp đồng OpenAPI.
 
 ## Firestore ownership
 

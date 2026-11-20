@@ -2,6 +2,7 @@ import type { OrderStatus, PosOrder } from "@/lib/types/order";
 
 export type OrderDisplayStatus =
   | OrderStatus
+  | "LOCAL_COMPLETE"
   | "REFUNDING"
   | "REFUNDED"
   | "REFUND_FAILED"
@@ -18,6 +19,7 @@ export function getOrderDisplayStatus(order: PosOrder): OrderDisplayStatus {
     return order.paymentStatus;
   }
   if (order.syncStatus === "CANCELLED") return "CANCELLED";
+  if (order.status === "LOCAL_PAID" && order.syncStatus === "SKIPPED") return "LOCAL_COMPLETE";
   return order.status;
 }
 

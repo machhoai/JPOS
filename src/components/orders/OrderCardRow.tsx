@@ -26,6 +26,13 @@ const STATUS_CONFIG: Record<
     OrderDisplayStatus,
     { label: string; bgClass: string; textClass: string; borderLeftClass: string; dotClass: string }
 > = {
+    LOCAL_COMPLETE: {
+        label: "Hoàn tất nội bộ",
+        bgClass: "bg-emerald-50",
+        textClass: "text-emerald-700",
+        borderLeftClass: "border-l-emerald-500",
+        dotClass: "bg-emerald-500",
+    },
     SYNC_SUCCESS: {
         label: "Đã đồng bộ",
         bgClass: "bg-emerald-500/10",

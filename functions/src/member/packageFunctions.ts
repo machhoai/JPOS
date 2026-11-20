@@ -6,6 +6,7 @@ import {
   confirmRemotePayment,
   createRemoteOrder,
   queryPaymentStatus,
+  readRemoteOrderPayAmount,
   type HKApiResponse,
 } from "../services/hkApiService";
 import {
@@ -292,6 +293,7 @@ async function finalizeMemberPackageOrder(
     });
   });
   let hkOrderNumber = order.hkOrderNumber;
+  let remoteActualPayment = readRemoteOrderPayAmount(order.remoteActualPayment);
   let currentAction = "order_create";
   try {
     if (!hkOrderNumber) {
@@ -315,36 +317,12 @@ async function finalizeMemberPackageOrder(
           createResponse.msg || "OpenAPI không thể tạo đơn bán gói.",
         );
       }
-      const remoteActualPayment = Number(createResponse.data?.actualPayment);
+      remoteActualPayment = readRemoteOrderPayAmount(createResponse.data?.actualPayment);
       await docRef.update({
         hkOrderNumber,
-        remoteActualPayment: Number.isFinite(remoteActualPayment)
-          ? remoteActualPayment
-          : null,
+        remoteActualPayment,
         updatedAt: new Date().toISOString(),
       });
-      if (
-        !Number.isFinite(remoteActualPayment) ||
-        remoteActualPayment !== order.totalAmount
-      ) {
-        throw new MemberRemoteApiError(
-          "order_create",
-          createResponse.code,
-          "Số tiền đơn OpenAPI không khớp số tiền khách đã thanh toán. " +
-            "Đơn đã dừng trước bước order_pay để đối soát.",
-        );
-      }
-    }
-
-    if (
-      order.remoteActualPayment !== undefined &&
-      order.remoteActualPayment !== order.totalAmount
-    ) {
-      throw new MemberRemoteApiError(
-        "order_create",
-        null,
-        "Số tiền đơn OpenAPI không khớp số tiền đã thu. Cần đối soát trước khi thử lại.",
-      );
     }
 
     currentAction = "order_pay_query";
@@ -356,7 +334,10 @@ async function finalizeMemberPackageOrder(
       currentAction = "order_pay";
       const payResponse = await callRemote(
         "order_pay",
-        () => confirmRemotePayment({ orderNumber: hkOrderNumber! }),
+        () => confirmRemotePayment({
+          orderNumber: hkOrderNumber!,
+          payAmount: remoteActualPayment,
+        }),
       );
       currentAction = "order_pay_query";
       statusResponse = await callRemote(

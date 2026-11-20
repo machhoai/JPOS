@@ -9,16 +9,19 @@ import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { isProductAvailableForWarehouse } from "../services/productVisibilityPolicy";
 import { resolveOrderItemTaxPricing } from "../services/productTax";
+import { loadVietnamSaleSettings, resolveVietnamSaleProduct, vietnamBusinessDate } from "../services/vietnamSalePricing";
 import {
   confirmRemotePayment,
   createRemoteOrder,
   queryPaymentStatus,
+  readRemoteOrderPayAmount,
 } from "../services/hkApiService";
 import { getPosAuthSession } from "../services/posAuthService";
 import {
   canClaimRemoteOrderSync,
   canQueueRemoteOrderRetry,
   isRevenueEligibleOrder,
+  paidOrderSyncStatus,
   shouldSynchronizeRemoteOrder,
 } from "./orderLifecycle";
 import {
@@ -42,6 +45,7 @@ import { canAccessCloseout, canReadOrder, canReadOrderRange, isOwnOrderToday } f
 interface OrderItemInput {
   goodsId: string;
   quantity: number;
+  quotedPrice?: number;
 }
 
 interface OrderInput {
@@ -53,6 +57,7 @@ interface OrderInput {
   deviceId?: string;
   items: OrderItemInput[];
   voucherCodes: string[];
+  quotedTotalAmount?: number;
 }
 
 interface CheckoutInput extends OrderInput {
@@ -190,13 +195,18 @@ function validateOrderInput(data: unknown): OrderInput {
   if (!Array.isArray(input.items) || input.items.length === 0) {
     throw new HttpsError("invalid-argument", "Đơn hàng chưa có sản phẩm.");
   }
+  if (input.quotedTotalAmount !== undefined &&
+      (!Number.isFinite(input.quotedTotalAmount) || input.quotedTotalAmount < 0)) {
+    throw new HttpsError("invalid-argument", "Số tiền hiển thị không hợp lệ.");
+  }
 
   const seenGoodsIds = new Set<string>();
   const items = input.items.map((item) => {
     if (
       !item ||
       typeof item.goodsId !== "string" ||
-      item.goodsId.trim().length === 0 ||
+      item.goodsId.trim().length === 0 || item.goodsId.includes("/") ||
+      item.goodsId === "." || item.goodsId === ".." ||
       !Number.isInteger(item.quantity) ||
       item.quantity < 1 ||
       item.quantity > 999
@@ -213,7 +223,11 @@ function validateOrderInput(data: unknown): OrderInput {
       );
     }
     seenGoodsIds.add(item.goodsId);
-    return { goodsId: item.goodsId, quantity: item.quantity };
+    if (item.quotedPrice !== undefined &&
+        (!Number.isFinite(item.quotedPrice) || item.quotedPrice < 0)) {
+      throw new HttpsError("invalid-argument", "Giá hiển thị không hợp lệ.");
+    }
+    return { goodsId: item.goodsId, quantity: item.quantity, quotedPrice: item.quotedPrice };
   });
 
   return {
@@ -228,6 +242,7 @@ function validateOrderInput(data: unknown): OrderInput {
         : undefined,
     items,
     voucherCodes,
+    quotedTotalAmount: input.quotedTotalAmount,
   };
 }
 
@@ -253,29 +268,37 @@ async function assertWarehouseAccess(
 }
 
 async function loadAuthoritativeItems(
+  transaction: FirebaseFirestore.Transaction,
   itemInputs: OrderItemInput[],
   warehouseId: string,
 ): Promise<OrderItem[]> {
-  const [luckyDrawSettings, visibilitySnapshot] = await Promise.all([
+  const [luckyDrawSettings, visibilitySnapshot, vietnamSettings] = await Promise.all([
     getLuckyDrawSettingsForWarehouse(warehouseId),
-    db.collection(POS_COLLECTIONS.productVisibilitySettings).doc(warehouseId).get(),
+    transaction.get(db.collection(POS_COLLECTIONS.productVisibilitySettings).doc(warehouseId)),
+    loadVietnamSaleSettings(warehouseId, itemInputs.map((item) => item.goodsId), transaction),
   ]);
   const visibility = visibilitySnapshot.data();
   const refs = itemInputs.map((item) =>
     db.collection(POS_COLLECTIONS.products).doc(item.goodsId),
   );
-  const snapshots = await db.getAll(...refs);
+  const snapshots = await transaction.getAll(...refs);
 
-  const items = snapshots.map((snapshot, index) => {
-    if (!snapshot.exists) {
+  const today = vietnamBusinessDate();
+  const items = snapshots.map((snapshot, index): OrderItem => {
+    const itemInput = itemInputs[index];
+    const offer = resolveVietnamSaleProduct(snapshot.data(), vietnamSettings.get(snapshot.id), today);
+    const product = offer.product;
+    if (offer.blocked) {
+      throw new HttpsError("failed-precondition", "Sản phẩm bán nội bộ chưa có giá Việt Nam có hiệu lực.");
+    }
+    if (!product || product.is_deleted === true) {
       throw new HttpsError(
         "failed-precondition",
         `Sản phẩm ${itemInputs[index].goodsId} không còn tồn tại.`,
       );
     }
 
-    const product = snapshot.data();
-    if (!isProductAvailableForWarehouse(snapshot.id, product || {}, visibility)) {
+    if (!isProductAvailableForWarehouse(snapshot.id, product, visibility)) {
       throw new HttpsError(
         "failed-precondition",
         `Sản phẩm ${product?.goodsName || snapshot.id} hiện đã ngừng bán tại cửa hàng này.`,
@@ -296,6 +319,14 @@ async function loadAuthoritativeItems(
       throw new HttpsError(
         "failed-precondition",
         `Dữ liệu sản phẩm ${itemInputs[index].goodsId} không hợp lệ.`,
+      );
+    }
+
+    if ((offer.vietnamSettingsVersion !== undefined || itemInput.quotedPrice !== undefined) && itemInput.quotedPrice !== price) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Giá tại quầy vừa thay đổi hoặc app chưa hỗ trợ giá Việt Nam. Hãy cập nhật danh mục và kiểm tra giỏ hàng trước khi thu tiền.",
+        { reason: "ORDER_QUOTE_CHANGED" },
       );
     }
 
@@ -335,6 +366,11 @@ async function loadAuthoritativeItems(
       unitPriceBeforeTax: taxPricing.unitPriceBeforeTax,
       taxRate: taxPricing.taxRate,
       taxAmount: taxPricing.unitTaxAmount * itemInputs[index].quantity,
+      ...(offer.vietnamSettingsVersion !== undefined ? {
+        vietnamSettingsVersion: offer.vietnamSettingsVersion,
+        sendSaleToHk: offer.sendSaleToHk !== false,
+      } : {}),
+      ...(offer.vatRateName ? { vatRateName: offer.vatRateName } : {}),
       ticketsPerUnit,
       luckyDrawTicketsPerUnit,
       ...(ticketCount > 0
@@ -342,6 +378,11 @@ async function loadAuthoritativeItems(
         : {}),
     };
   });
+
+  if (items.some((item) => item.sendSaleToHk === false) &&
+      items.some((item) => item.sendSaleToHk !== false)) {
+    throw new HttpsError("failed-precondition", "Vui lòng tách sản phẩm bán nội bộ và sản phẩm gửi HK thành hai đơn.");
+  }
 
   const totalTicketCount = items.reduce(
     (total, item) => total + (item.ticketCodes?.length ?? 0),
@@ -375,6 +416,26 @@ function calculateTotal(items: OrderItem[]): number {
   );
 }
 
+const sendsSaleToHk = (items: OrderItem[]): boolean => items.every((item) => item.sendSaleToHk !== false);
+
+function assertQuotedTotal(quotedTotal: number | undefined, total: number) {
+  if (quotedTotal !== undefined && quotedTotal !== total) {
+    throw new HttpsError("failed-precondition", "Số tiền sau voucher vừa thay đổi. Hãy kiểm tra lại giỏ trước khi thanh toán.", {
+      reason: "ORDER_QUOTE_CHANGED",
+    });
+  }
+}
+
+function assertOrderCanBeRepriced(order: PosOrder) {
+  if (order.fixedTransferDetails?.status === "AWAITING_MANUAL_CONFIRMATION" ||
+      order.paymentDetails?.attempts?.some((attempt) =>
+        ["CREATING", "PENDING", "PROCESSING", "UNDERPAID", "PAID"].includes(attempt.status) ||
+        (attempt.status !== "EXPIRED" && Boolean(attempt.paymentLinkId) &&
+          !attempt.remoteCancellationConfirmed))) {
+    throw new HttpsError("failed-precondition", "Đơn đang có phiên chuyển khoản. Hãy hoàn tất hoặc hủy phiên đó trước khi đổi giá hay phương thức thanh toán.");
+  }
+}
+
 function createDraftOrder(
   input: OrderInput,
   items: OrderItem[],
@@ -396,6 +457,7 @@ function createDraftOrder(
     operatorFirebaseUid: operator.firebaseUid,
     operatorName: operator.name,
     status: "DRAFT",
+    sendSaleToHk: sendsSaleToHk(items),
     paymentMethod: "CASH",
     paymentMethodId: "CASH",
     paymentMethodName: "Tiền mặt",
@@ -417,6 +479,9 @@ function createDraftOrder(
 }
 
 function assertMemberAssociation(order: PosOrder, input: OrderInput): void {
+  if (order.warehouseId !== input.warehouseId || order.shopId !== input.shopId) {
+    throw new HttpsError("failed-precondition", "Đơn hàng đã được lập tại cửa hàng khác.");
+  }
   if (order.uid && input.uid && order.uid !== input.uid) {
     throw new HttpsError(
       "failed-precondition",
@@ -505,20 +570,26 @@ export async function stagePosOrderForPayOS(
       });
     }
   }
-  const [operator, items] = await Promise.all([
-    assertWarehouseAccess(userId, input.warehouseId),
-    loadAuthoritativeItems(input.items, input.warehouseId),
-  ]);
-  const subtotalAmount = calculateTotal(items);
-  if (!Number.isSafeInteger(subtotalAmount) || subtotalAmount <= 0) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Tổng tiền thanh toán PayOS phải là số nguyên dương.",
-    );
-  }
+  const operator = await assertWarehouseAccess(userId, input.warehouseId);
 
   return db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(docRef);
+    const existing = snapshot.exists ? snapshot.data() as PosOrder : null;
+    if (existing) {
+      assertMemberAssociation(existing, input);
+      if (existing.createdBy !== userId) {
+        throw new HttpsError("permission-denied", "Bạn không có quyền tạo thanh toán cho đơn hàng này.");
+      }
+      if (existing.status !== "DRAFT" || existing.orderKind === "MEMBER_PACKAGE") {
+        throw new HttpsError("failed-precondition", "Đơn hàng không còn ở trạng thái chờ thanh toán.");
+      }
+      assertOrderCanBeRepriced(existing);
+    }
+    const items = await loadAuthoritativeItems(transaction, input.items, input.warehouseId);
+    const subtotalAmount = calculateTotal(items);
+    if (!Number.isSafeInteger(subtotalAmount) || subtotalAmount <= 0) {
+      throw new HttpsError("failed-precondition", "Tổng tiền thanh toán PayOS phải là số nguyên dương.");
+    }
     const now = new Date().toISOString();
     const voucherCalculation = input.voucherCodes.length > 0
       ? await applyOrderVouchers(transaction, {
@@ -543,9 +614,10 @@ export async function stagePosOrderForPayOS(
         "Đơn đã được voucher thanh toán đủ, không cần tạo mã chuyển khoản.",
       );
     }
+    assertQuotedTotal(input.quotedTotalAmount, voucherCalculation.totalAmount);
     const voucherFields = voucherFieldsForOrder(voucherCalculation);
 
-    if (!snapshot.exists) {
+    if (!existing) {
       const draft: PosOrder = {
         ...createDraftOrder(input, items, operator),
         paymentMethod: "QR_CODE",
@@ -556,21 +628,6 @@ export async function stagePosOrderForPayOS(
       };
       transaction.create(docRef, draft);
       return draft;
-    }
-
-    const existing = snapshot.data() as PosOrder;
-    assertMemberAssociation(existing, input);
-    if (existing.createdBy !== userId) {
-      throw new HttpsError(
-        "permission-denied",
-        "Bạn không có quyền tạo thanh toán cho đơn hàng này.",
-      );
-    }
-    if (existing.status !== "DRAFT") {
-      throw new HttpsError(
-        "failed-precondition",
-        "Đơn hàng không còn ở trạng thái chờ thanh toán.",
-      );
     }
 
     const stagedOrder: PosOrder = {
@@ -593,6 +650,7 @@ export async function stagePosOrderForPayOS(
       paymentMethodName: "Chuyển khoản",
       ...voucherFields,
       items,
+      sendSaleToHk: sendsSaleToHk(items),
       updatedAt: now,
     };
     transaction.update(docRef, {
@@ -615,6 +673,7 @@ export async function stagePosOrderForPayOS(
       voucherCodes: stagedOrder.voucherCodes ?? [],
       vouchers: stagedOrder.vouchers ?? [],
       items: stagedOrder.items,
+      sendSaleToHk: stagedOrder.sendSaleToHk,
       updatedAt: stagedOrder.updatedAt,
     });
     return stagedOrder;
@@ -627,7 +686,6 @@ export async function preparePosOrderForUser(
 ) {
   const input = validateOrderInput(data);
   const operator = await assertWarehouseAccess(userId, input.warehouseId);
-  const items = await loadAuthoritativeItems(input.items, input.warehouseId);
   const docRef = db.collection(POS_COLLECTIONS.orders).doc(input.localOrderId);
 
   try {
@@ -659,6 +717,7 @@ export async function preparePosOrderForUser(
         return existing;
       }
 
+      const items = await loadAuthoritativeItems(transaction, input.items, input.warehouseId);
       const draft = createDraftOrder(input, items, operator);
       transaction.create(docRef, draft);
       return draft;
@@ -709,11 +768,7 @@ export async function checkoutPosOrderForUser(
       "Thanh toán chuyển khoản phải được xác nhận qua PayOS.",
     );
   }
-  const [operator, items] = await Promise.all([
-    assertWarehouseAccess(userId, input.warehouseId),
-    loadAuthoritativeItems(input.items, input.warehouseId),
-  ]);
-  const subtotalAmount = calculateTotal(items);
+  const operator = await assertWarehouseAccess(userId, input.warehouseId);
   const docRef = db.collection(POS_COLLECTIONS.orders).doc(input.localOrderId);
 
   try {
@@ -734,7 +789,14 @@ export async function checkoutPosOrderForUser(
           throw new HttpsError("failed-precondition", "Đơn hàng đã bị hủy.");
         }
         if (existing.status !== "DRAFT") return;
+        if (existing.orderKind === "MEMBER_PACKAGE") {
+          throw new HttpsError("failed-precondition", "Vui lòng thanh toán đơn qua chức năng bán gói thành viên.");
+        }
+        assertOrderCanBeRepriced(existing);
       }
+
+      const items = await loadAuthoritativeItems(transaction, input.items, input.warehouseId);
+      const subtotalAmount = calculateTotal(items);
 
       const voucherCalculation = input.voucherCodes.length > 0
         ? await applyOrderVouchers(transaction, {
@@ -755,10 +817,11 @@ export async function checkoutPosOrderForUser(
             vouchers: [],
           };
       const voucherFields = voucherFieldsForOrder(voucherCalculation);
+      assertQuotedTotal(input.quotedTotalAmount, voucherCalculation.totalAmount);
       const completionFields = {
         status: "LOCAL_PAID" as const,
         paymentStatus: "PAID" as const,
-        syncStatus: "PENDING" as const,
+        syncStatus: paidOrderSyncStatus({ sendSaleToHk: sendsSaleToHk(items) }),
         paidAt: now,
       };
 
@@ -794,6 +857,7 @@ export async function checkoutPosOrderForUser(
         ...voucherFields,
         ...completionFields,
         items,
+        sendSaleToHk: sendsSaleToHk(items),
         updatedAt: now,
       });
     });
@@ -804,6 +868,7 @@ export async function checkoutPosOrderForUser(
       localOrderId: paidOrder.localOrderId,
       hkOrderNumber: paidOrder.hkOrderNumber,
       status: paidOrder.status,
+      syncStatus: paidOrder.syncStatus ?? null,
       totalAmount: paidOrder.totalAmount,
       paidAt: paidOrder.paidAt ?? null,
     };
@@ -856,6 +921,7 @@ export async function getPosOrderStatusForUser(
     localOrderId: order.localOrderId,
     hkOrderNumber: order.hkOrderNumber,
     status: order.status,
+    syncStatus: order.syncStatus ?? null,
     totalAmount: order.totalAmount,
     lastError: order.sync?.lastError ?? null,
     updatedAt: order.updatedAt,
@@ -1307,10 +1373,11 @@ async function synchronizeRemoteOrder(
     });
 
   let hkOrderNumber = order.hkOrderNumber;
+  let remoteActualPayment = readRemoteOrderPayAmount(order.remoteActualPayment);
   try {
-    if (!Number.isSafeInteger(order.totalAmount) || order.totalAmount <= 0) {
+    if (!Number.isSafeInteger(order.totalAmount) || order.totalAmount < 0) {
       throw new Error(
-        "Tổng tiền đơn POS bằng 0 hoặc không hợp lệ; cần đối soát trước khi đồng bộ OpenAPI.",
+        "Tổng tiền đơn POS không hợp lệ; cần đối soát trước khi đồng bộ OpenAPI.",
       );
     }
     if (!hkOrderNumber) {
@@ -1335,8 +1402,10 @@ async function synchronizeRemoteOrder(
         throw new Error("order_create không trả về orderNumber.");
       }
 
+      remoteActualPayment = readRemoteOrderPayAmount(createResponse.data?.actualPayment);
       const retained = await updateCurrentOperation({
         hkOrderNumber,
+        remoteActualPayment,
         remoteOrderId: order.remoteOrderId ?? null,
         updatedAt: new Date().toISOString(),
       });
@@ -1350,7 +1419,7 @@ async function synchronizeRemoteOrder(
     if (!statusResponse || !isRemotePaymentConfirmed(statusResponse)) {
       const payResponse = await confirmRemotePayment({
         orderNumber: hkOrderNumber,
-        payAmount: order.totalAmount,
+        payAmount: remoteActualPayment,
       });
       statusResponse = await queryPaymentStatus({
         orderNumber: hkOrderNumber,
@@ -1396,6 +1465,7 @@ async function synchronizeRemoteOrder(
       paymentStatus: order.paymentStatus ?? "PAID",
       syncStatus: "SYNC_FAILED",
       hkOrderNumber: hkOrderNumber || null,
+      remoteActualPayment,
       syncOperationId: operationId,
       updatedAt,
       sync: {

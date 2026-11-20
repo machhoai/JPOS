@@ -108,6 +108,7 @@ export default function CashierPage() {
   const draftOrderId = useCartStore((s) => s.draftOrderId);
   const currentHkOrderNumber = useCartStore((s) => s.currentHkOrderNumber);
   const currentOrderStatus = useCartStore((s) => s.currentOrderStatus);
+  const currentOrderSyncStatus = useCartStore((s) => s.currentOrderSyncStatus);
   const totalAmount = useCartStore(selectTotalAmount);
   const voucherDiscount = useCartStore(selectVoucherDiscount);
   const payableAmount = useCartStore(selectPayableAmount);
@@ -337,9 +338,12 @@ export default function CashierPage() {
   // ── Load Products on Mount ─────────────────────────────────────────────
   useEffect(() => {
     if (user && userDoc) {
-      void fetchProducts();
+      const refresh = () => { void fetchProducts(); };
+      refresh();
+      window.addEventListener("focus", refresh);
+      return () => window.removeEventListener("focus", refresh);
     }
-  }, [user, userDoc, fetchProducts]);
+  }, [user, userDoc, effectiveWarehouseId, fetchProducts]);
 
   useEffect(() => {
     if (
@@ -374,6 +378,15 @@ export default function CashierPage() {
           "Giỏ hàng đang được khóa",
           "Hãy hoàn tất hoặc hủy phiên chuyển khoản trước khi sửa đơn.",
         );
+        return false;
+      }
+      const products = useProductStore.getState().products;
+      const localOnly = product.sendSaleToHk === false;
+      if (useCartStore.getState().items.some((item) => {
+        const current = products.find((candidate) => candidate.goodsId === item.goodsId);
+        return current && (current.sendSaleToHk === false) !== localOnly;
+      })) {
+        showWarning("Cần tách đơn", "Sản phẩm bán nội bộ và sản phẩm gửi HK phải thanh toán thành hai đơn.");
         return false;
       }
       // Dùng afterTaxPrice (giá sau thuế) cho giỏ hàng
@@ -457,6 +470,7 @@ export default function CashierPage() {
   useEffect(() => {
     if (
       !currentOrderId ||
+      currentOrderSyncStatus === "SKIPPED" ||
       !["LOCAL_PAID", "SYNCING"].includes(currentOrderStatus || "")
     ) {
       return;
@@ -468,7 +482,7 @@ export default function CashierPage() {
     }, 3000);
 
     return () => window.clearInterval(intervalId);
-  }, [currentOrderId, currentOrderStatus, refreshCurrentOrderStatus]);
+  }, [currentOrderId, currentOrderStatus, currentOrderSyncStatus, refreshCurrentOrderStatus]);
 
   // ── Checkout ───────────────────────────────────────────────────────────
   const handleCheckout = useCallback(async () => {
@@ -499,13 +513,10 @@ export default function CashierPage() {
         loading: "Đang ghi nhận thanh toán...",
         success: "Thanh toán thành công",
         error: "Không thể thanh toán",
-        successDescription:
-          "Đơn đã được lưu trên Firebase. Hệ thống đang đồng bộ nền.",
-        errorDescription:
-          "Đơn chưa được ghi nhận. Vui lòng kiểm tra kết nối và thử lại.",
-        onRetry: () => {
-          void notifyCheckout();
-        },
+        successDescription: "Đã ghi nhận thanh toán trên JPOS.",
+        errorDescription: (error) => error instanceof Error
+          ? error.message
+          : "Chưa xác định được trạng thái đơn. Vui lòng kiểm tra lại.",
       });
     };
 
@@ -513,6 +524,9 @@ export default function CashierPage() {
       await notifyCheckout();
     } catch (error: unknown) {
       console.error("[POS] Lỗi thanh toán:", error);
+      if (error instanceof Error && error.message.includes("Giá tại quầy vừa thay đổi")) {
+        await fetchProducts();
+      }
       throw error;
     }
   }, [effectiveWarehouseId, checkout, handleAutoPrint, shopId]);
@@ -633,6 +647,7 @@ export default function CashierPage() {
             currentOrderId={currentOrderId}
             currentHkOrderNumber={currentHkOrderNumber}
             currentOrderStatus={currentOrderStatus}
+            currentOrderSyncStatus={currentOrderSyncStatus}
             totalAmount={totalAmount}
             itemCount={itemCount}
             vouchers={vouchers}

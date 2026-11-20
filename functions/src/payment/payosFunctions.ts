@@ -12,6 +12,7 @@ import * as logger from "firebase-functions/logger";
 import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { stagePosOrderForPayOS } from "../order/functions";
+import { localOnlySyncUpdate } from "../order/orderLifecycle";
 import { buildPayOSRedirectUrls, getPayOS } from "../services/payosService";
 import { getPosAuthSession } from "../services/posAuthService";
 import {
@@ -658,8 +659,10 @@ export async function markPayOSPaymentPaid(
       }
       return "ALREADY_COMPLETED";
     }
+    const sync = localOnlySyncUpdate(order);
     transaction.update(docRef, {
       status: "LOCAL_PAID",
+      ...sync,
       paymentMethod: "QR_CODE",
       paymentMethodId: "QR_CODE",
       paymentMethodName: "Chuyển khoản",
@@ -668,7 +671,7 @@ export async function markPayOSPaymentPaid(
       paidAt,
       updatedAt: paidAt,
     });
-    writePaymentStatus(transaction, { ...order, status: "LOCAL_PAID", paymentDetails, ...verificationUpdate, paidAt, updatedAt: paidAt });
+    writePaymentStatus(transaction, { ...order, status: "LOCAL_PAID", ...sync, paymentDetails, ...verificationUpdate, paidAt, updatedAt: paidAt });
     return "PAID";
   });
 }
@@ -1047,9 +1050,11 @@ export async function confirmPayOSPaymentManuallyForUser(
         previousPaymentStatus: attempt.status,
       },
     };
+    const sync = localOnlySyncUpdate(order);
     const nextOrder: PosOrder = {
       ...order,
       status: "LOCAL_PAID",
+      ...sync,
       paymentMethod: "QR_CODE",
       paymentMethodId: "QR_CODE",
       paymentMethodName: "Chuyển khoản (xác nhận thủ công)",
@@ -1064,6 +1069,7 @@ export async function confirmPayOSPaymentManuallyForUser(
     };
     transaction.update(authorized.docRef, {
       status: nextOrder.status,
+      ...sync,
       paymentMethod: nextOrder.paymentMethod,
       paymentMethodId: nextOrder.paymentMethodId,
       paymentMethodName: nextOrder.paymentMethodName,

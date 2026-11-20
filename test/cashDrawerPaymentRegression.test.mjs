@@ -19,7 +19,7 @@ test("real cash checkout remains paid, clears cart and prints even when drawer d
   await mainCheckout(cart, drawer, printed)();
   assert.equal(cart.requests.length, 1);
   assert.equal(cart.requests[0].paymentMethodId, "CASH");
-  assert.deepEqual(cart.requests[0].items, [{ goodsId: "g1", quantity: 2 }]);
+  assert.deepEqual(cart.requests[0].items, [{ goodsId: "g1", quantity: 2, quotedPrice: 3000 }]);
   assert.equal(cart.store.getState().currentOrderStatus, "LOCAL_PAID");
   assert.equal(cart.store.getState().items.length, 0);
   assert.equal(cart.store.getState().isCheckingOut, false);
@@ -36,6 +36,17 @@ test("a pending drawer command cannot delay real checkout completion or printing
     assert.deepEqual(printed, [orderId]);
     assert.equal(cart.requests.length, 1);
   } finally { release(); }
+});
+
+test("a local-only order completes after printing without an HK order number", async () => {
+  const cart = cartHarness(null, { syncStatus: "SKIPPED" });
+  await cart.store.getState().checkout(20692, "warehouse-a");
+  assert.equal(cart.store.getState().currentHkOrderNumber, null);
+  assert.equal(cart.store.getState().currentOrderSyncStatus, "SKIPPED");
+  assert.equal(cart.journal.at(-1).totalAmount, 6000);
+  assert.equal(cart.journal.at(-1).syncStatus, "SKIPPED");
+  cart.store.getState().markReceiptPrinted(orderId);
+  assert.equal(cart.store.getState().checkoutCheckpoint, "COMPLETED");
 });
 
 test("failed real checkout keeps the cart and never opens the drawer or prints", async () => {

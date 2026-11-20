@@ -129,24 +129,23 @@ async function loadVoucherRecord(
     const productRef = db.collection(POS_COLLECTIONS.products).doc(productId);
     const visibilityRef = db.collection(POS_COLLECTIONS.productVisibilitySettings)
       .doc(input.warehouseId);
-    const [productSnapshot, visibilitySnapshot] = await Promise.all([
-      transaction.get(productRef),
-      transaction.get(visibilityRef),
-    ]);
-    const product = productSnapshot.data();
-    if (
-      !productSnapshot.exists ||
-      !product ||
-      !isProductAvailableForWarehouse(
-        productId,
-        product,
-        visibilitySnapshot.data(),
-      )
-    ) {
-      throw new HttpsError(
-        "failed-precondition",
-        `Sản phẩm của voucher ${codeValue} hiện không được bán tại cửa hàng.`,
-      );
+    const pricedItem = input.items.find((item) => item.goodsId === productId && item.vietnamSettingsVersion !== undefined);
+    let product: Record<string, unknown>;
+    if (pricedItem) {
+      product = { ...pricedItem, afterTaxPrice: pricedItem.price };
+    } else {
+      const [productSnapshot, visibilitySnapshot] = await Promise.all([
+        transaction.get(productRef),
+        transaction.get(visibilityRef),
+      ]);
+      const upstream = productSnapshot.data();
+      if (!upstream || !isProductAvailableForWarehouse(productId, upstream, visibilitySnapshot.data())) {
+        throw new HttpsError(
+          "failed-precondition",
+          `Sản phẩm của voucher ${codeValue} hiện không được bán tại cửa hàng.`,
+        );
+      }
+      product = upstream;
     }
     resolution = buildVoucherResolution(
       codeValue,

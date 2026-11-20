@@ -11,6 +11,7 @@ import type {
   OrderItem,
   OrderMemberSnapshot,
   OrderStatus,
+  OrderSyncStatus,
   PaymentMethod,
 } from "@/lib/types/order";
 import {
@@ -50,6 +51,7 @@ export interface CartState {
   currentOrderId: string | null;
   currentHkOrderNumber: string | null;
   currentOrderStatus: OrderStatus | null;
+  currentOrderSyncStatus: OrderSyncStatus | null;
   isCheckingOut: boolean;
   isPaymentLocked: boolean;
   paymentLockOrderId: string | null;
@@ -70,6 +72,7 @@ export interface CartState {
   setMember: (member: OrderMemberSnapshot | null) => void;
   removeItem: (goodsId: string) => void;
   removeUnavailableItems: (goodsIds: string[]) => void;
+  refreshItemPrices: (prices: ReadonlyMap<string, number>) => boolean;
   updateQuantity: (goodsId: string, quantity: number) => void;
   setPaymentMethod: (method: PaymentMethod) => void;
   clearCart: () => void;
@@ -116,7 +119,8 @@ export const selectVoucherDiscount = (state: CartState): number => {
   const freeDiscount = state.vouchers
     .filter((voucher) => voucher.rewardType !== "DISCOUNT_PERCENT")
     .reduce(
-      (total, voucher) => total + voucher.product.price * voucher.product.quantity,
+      (total, voucher) => total +
+        (state.items.find((item) => item.goodsId === voucher.product.goodsId)?.price ?? 0) * voucher.product.quantity,
       0,
     );
   const percent = state.vouchers.find(
@@ -157,6 +161,7 @@ function saveCartCheckpoint(
       overrides.totalAmount ??
       selectPayableAmount({ ...state, items }),
     orderStatus: overrides.orderStatus ?? state.currentOrderStatus,
+    syncStatus: overrides.syncStatus === undefined ? state.currentOrderSyncStatus : overrides.syncStatus,
     startedAt: overrides.startedAt ?? now,
     updatedAt: now,
     lastError: overrides.lastError ?? null,
@@ -179,6 +184,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   currentOrderId: null,
   currentHkOrderNumber: null,
   currentOrderStatus: null,
+  currentOrderSyncStatus: null,
   isCheckingOut: false,
   isPaymentLocked: false,
   paymentLockOrderId: null,
@@ -189,6 +195,23 @@ export const useCartStore = create<CartState>((set, get) => ({
   checkoutModalRequested: false,
 
   // ── Actions ────────────────────────────────────────────────────────────────
+  refreshItemPrices: (prices) => {
+    const state = get();
+    if (state.isPaymentLocked || state.isCheckingOut) return false;
+    let changed = false;
+    const items = state.items.map((item) => {
+      const price = prices.get(item.goodsId);
+      if (price === undefined || price === item.price) return item;
+      changed = true;
+      return { ...item, price };
+    });
+    if (changed) {
+      set({ items });
+      saveCartCheckpoint(get(), "CART_READY");
+    }
+    return changed;
+  },
+
 
   addItem: (item) => {
     set((state) => {
@@ -460,6 +483,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       draftOrderId: paymentFinished ? null : journal.localOrderId,
       currentOrderId: journal.localOrderId,
       currentOrderStatus: journal.orderStatus,
+      currentOrderSyncStatus: journal.syncStatus ?? null,
       isPaymentLocked: paymentPending && journal.paymentMethod === "QR_CODE",
       paymentLockOrderId:
         paymentPending && journal.paymentMethod === "QR_CODE"
@@ -488,6 +512,11 @@ export const useCartStore = create<CartState>((set, get) => ({
   markReceiptPrinted: (localOrderId) => {
     const state = get();
     if (state.currentOrderId !== localOrderId) return;
+    if (state.currentOrderStatus === "SYNC_SUCCESS" || state.currentOrderSyncStatus === "SKIPPED") {
+      set({ checkoutCheckpoint: "COMPLETED" });
+      void clearCheckoutJournal();
+      return;
+    }
     set({ checkoutCheckpoint: "SYNC_PENDING" });
     saveCartCheckpoint(get(), "SYNC_PENDING", { localOrderId });
   },
@@ -507,9 +536,10 @@ export const useCartStore = create<CartState>((set, get) => ({
         localOrderId,
         shopId,
         warehouseId,
-        items: state.items.map(({ goodsId, quantity }) => ({
+        items: state.items.map(({ goodsId, quantity, price }) => ({
           goodsId,
           quantity,
+          quotedPrice: price,
         })),
         voucherCodes: state.vouchers.map((voucher) => voucher.code),
         ...(state.memberUid ? { uid: state.memberUid } : {}),
@@ -524,6 +554,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         set({
           currentOrderId: prepared.localOrderId,
           currentOrderStatus: prepared.status,
+          currentOrderSyncStatus: null,
         });
       }
     } catch (error: unknown) {
@@ -541,9 +572,10 @@ export const useCartStore = create<CartState>((set, get) => ({
       set({
         currentHkOrderNumber: result.hkOrderNumber,
         currentOrderStatus: result.status,
+        currentOrderSyncStatus: result.syncStatus ?? null,
       });
       if (
-        result.status === "SYNC_SUCCESS" &&
+        (result.status === "SYNC_SUCCESS" || result.syncStatus === "SKIPPED") &&
         get().checkoutCheckpoint === "SYNC_PENDING"
       ) {
         set({ checkoutCheckpoint: "COMPLETED" });
@@ -559,6 +591,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     saveCartCheckpoint(previous, "RECEIPT_PENDING", {
       localOrderId,
       orderStatus: status,
+      syncStatus: null,
       items: previous.items,
     });
     set({
@@ -571,6 +604,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       currentOrderId: localOrderId,
       currentHkOrderNumber: null,
       currentOrderStatus: status,
+      currentOrderSyncStatus: null,
       isCheckingOut: false,
       isPaymentLocked: false,
       paymentLockOrderId: null,
@@ -641,9 +675,11 @@ export const useCartStore = create<CartState>((set, get) => ({
         shopId,
         warehouseId,
         paymentMethodId: state.paymentMethod,
-        items: state.items.map(({ goodsId, quantity }) => ({
+        quotedTotalAmount: selectPayableAmount(state),
+        items: state.items.map(({ goodsId, quantity, price }) => ({
           goodsId,
           quantity,
+          quotedPrice: price,
         })),
         voucherCodes: state.vouchers.map((voucher) => voucher.code),
         ...(state.memberUid ? { uid: state.memberUid } : {}),
@@ -654,11 +690,9 @@ export const useCartStore = create<CartState>((set, get) => ({
         localOrderId: result.localOrderId,
         items: state.items,
         paymentMethod: state.paymentMethod,
-        totalAmount: state.items.reduce(
-          (sum, item) => sum + item.price * item.quantity,
-          0,
-        ),
+        totalAmount: result.totalAmount,
         orderStatus: result.status,
+        syncStatus: result.syncStatus ?? null,
       });
 
       set({
@@ -671,6 +705,7 @@ export const useCartStore = create<CartState>((set, get) => ({
         currentOrderId: result.localOrderId,
         currentHkOrderNumber: result.hkOrderNumber,
         currentOrderStatus: result.status,
+        currentOrderSyncStatus: result.syncStatus ?? null,
         isCheckingOut: false,
         checkoutCheckpoint: "RECEIPT_PENDING",
         checkoutModalRequested: false,

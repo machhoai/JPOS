@@ -26,17 +26,18 @@ export function checkoutCallback(file, name, scope) {
   return exports.callback;
 }
 
-export function cartHarness(savedJournal = null) {
+export function cartHarness(savedJournal = null, { syncStatus } = {}) {
   const requests = [], journal = [];
   const control = { error: null };
   const services = {
     checkoutOrder: async (input) => {
       requests.push(input);
       if (control.error) throw control.error;
-      return { localOrderId: input.localOrderId, status: "LOCAL_PAID", hkOrderNumber: null };
+      return { localOrderId: input.localOrderId, status: "LOCAL_PAID", hkOrderNumber: null,
+        totalAmount: input.quotedTotalAmount, syncStatus };
     },
     generateLocalOrderId: () => orderId,
-    fetchOrderSyncStatus: async () => ({ status: "LOCAL_PAID", hkOrderNumber: null }),
+    fetchOrderSyncStatus: async () => ({ status: "LOCAL_PAID", hkOrderNumber: null, syncStatus }),
     prepareOrder: async () => { throw new Error("Unexpected order preparation"); },
   };
   const journalService = {

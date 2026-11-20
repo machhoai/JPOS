@@ -135,6 +135,16 @@ export function buildRemoteOrderPayBody(
   return { OrderNumber: orderNumber, PayAmount: payAmount };
 }
 
+/** Use the amount quoted by HK, or let HK settle its own order total. */
+export function readRemoteOrderPayAmount(value: unknown): number | null {
+  const amount = typeof value === "string" && /^\d+$/.test(value.trim())
+    ? Number(value)
+    : value;
+  return typeof amount === "number" && Number.isSafeInteger(amount) && amount > 0
+    ? amount
+    : null;
+}
+
 // =============================================================================
 // Internal: Send signed request
 // =============================================================================
@@ -526,7 +536,7 @@ export async function createRemoteOrder(params: {
  * Confirm payment for an order on the HK remote system.
  * Action: `order_pay`
  *
- * @param params - Order number only; the HK default payment method is used.
+ * @param params - HK order number and amount quoted by HK, if available.
  * @returns Response confirming payment.
  */
 export async function confirmRemotePayment(params: {

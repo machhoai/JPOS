@@ -6,6 +6,15 @@ interface SyncGuardOrder {
   paymentStatus?: string;
   syncStatus?: string;
   cancellationOperationId?: string | null;
+  sendSaleToHk?: boolean;
+}
+
+export function paidOrderSyncStatus(order: Pick<SyncGuardOrder, "sendSaleToHk">) {
+  return order.sendSaleToHk === false ? "SKIPPED" as const : "PENDING" as const;
+}
+
+export function localOnlySyncUpdate(order: Pick<SyncGuardOrder, "sendSaleToHk">) {
+  return order.sendSaleToHk === false ? { syncStatus: "SKIPPED" as const } : {};
 }
 
 export function isRevenueEligibleOrder(order: SyncGuardOrder): boolean {
@@ -43,6 +52,7 @@ export function canClaimRemoteOrderSync(order: SyncGuardOrder): boolean {
   return (
     order.status === "LOCAL_PAID" &&
     (order.orderKind ?? "STANDARD") !== "MEMBER_PACKAGE" &&
+    order.sendSaleToHk !== false && order.syncStatus !== "SKIPPED" &&
     !isCancellationLocked(order)
   );
 }
@@ -52,6 +62,7 @@ export function canQueueRemoteOrderRetry(order: SyncGuardOrder): boolean {
   return (
     order.status === "SYNC_FAILED" &&
     (order.orderKind ?? "STANDARD") !== "MEMBER_PACKAGE" &&
+    order.sendSaleToHk !== false && order.syncStatus !== "SKIPPED" &&
     !isCancellationLocked(order)
   );
 }

@@ -10,6 +10,7 @@ import { withDeviceAuth } from "@/lib/services/deviceEnrollmentService";
 import type {
   PosOrder,
   OrderStatus,
+  OrderSyncStatus,
   OrderItem,
   OrderMemberSnapshot,
   PaymentMethod,
@@ -34,8 +35,9 @@ interface OrderRequest {
   warehouseId: string;
   uid?: string;
   member?: OrderMemberSnapshot;
-  items: Array<Pick<OrderItem, "goodsId" | "quantity">>;
+  items: Array<Pick<OrderItem, "goodsId" | "quantity"> & { quotedPrice?: number }>;
   voucherCodes?: string[];
+  quotedTotalAmount?: number;
 }
 
 export async function resolveVoucher(
@@ -72,11 +74,13 @@ interface PreparedOrderResult {
 }
 
 export interface CheckoutOrderResult extends PreparedOrderResult {
+  syncStatus?: OrderSyncStatus | null;
   hkOrderNumber: string | null;
   paidAt: string | null;
 }
 
 export interface OrderSyncStatusResult {
+  syncStatus?: OrderSyncStatus | null;
   localOrderId: string;
   hkOrderNumber: string | null;
   status: OrderStatus;

@@ -5,6 +5,7 @@ const {
   buildRemoteMemberRegistrationBody,
   buildRemoteOrderCreateBody,
   buildRemoteOrderPayBody,
+  readRemoteOrderPayAmount,
 } = require("../lib/services/hkApiService");
 
 test("member_join never sends an unsupported physical card field", () => {
@@ -50,9 +51,20 @@ test("order_pay relies on the HK default payment method", () => {
   assert.equal("PayType" in body, false);
 });
 
-test("order_pay sends the discounted amount for a voucher order", () => {
-  assert.deepEqual(buildRemoteOrderPayBody("HK-ORDER-002", 160000), {
+test("order_pay uses the amount calculated by HK even when the local order costs more", () => {
+  const localOrder = { totalAmount: 500 };
+  const hkOrder = { totalAmount: 220, discountAmount: 20, actualPayment: "200" };
+  const payload = buildRemoteOrderPayBody("HK-ORDER-002", readRemoteOrderPayAmount(hkOrder.actualPayment));
+  assert.deepEqual(payload, {
     OrderNumber: "HK-ORDER-002",
-    PayAmount: 160000,
+    PayAmount: 200,
   });
+  assert.equal(localOrder.totalAmount, 500);
+});
+
+test("an unavailable HK amount defaults to the HK order total", () => {
+  for (const amount of [undefined, null, true, " ", "2e2", 0, -1, 1.5, Infinity]) {
+    assert.equal(readRemoteOrderPayAmount(amount), null);
+  }
+  assert.equal(readRemoteOrderPayAmount(200), 200);
 });

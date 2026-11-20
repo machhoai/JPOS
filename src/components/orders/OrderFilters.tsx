@@ -41,6 +41,7 @@ export const DEFAULT_FILTERS: OrderFilterState = {
 const STATUS_TABS = [
     { id: "all", label: "Tất cả" },
     { id: "SYNC_SUCCESS", label: "Đã đồng bộ" },
+    { id: "LOCAL_COMPLETE", label: "Hoàn tất nội bộ" },
     { id: "REFUNDED", label: "Đã hoàn tiền" },
     { id: "REFUNDING", label: "Đang hoàn tiền" },
     { id: "REFUND_UNKNOWN", label: "Cần đối soát hoàn tiền" },

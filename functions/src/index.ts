@@ -41,7 +41,7 @@ export { syncProductsFromJpulse } from "./services/jpulseProductSyncFunction";
 export const getPosProducts = onCall(
   { region: "asia-southeast1", cors: true },
   async (request) => {
-    await assertActivePosDevice(request.data);
+    const device = await assertActivePosDevice(request.data);
     if (!request.auth) {
       throw new HttpsError(
         "unauthenticated",
@@ -49,7 +49,7 @@ export const getPosProducts = onCall(
       );
     }
 
-    return loadPosProductCatalog();
+    return loadPosProductCatalog(device.warehouseId);
   },
 );
 

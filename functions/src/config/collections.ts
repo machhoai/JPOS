@@ -31,6 +31,7 @@ export const POS_COLLECTIONS = {
   paymentSettings: "pos_payment_settings",
   luckyDrawSettings: "pos_lucky_draw_settings",
   productVisibilitySettings: "pos_product_visibility_settings",
+  vietnamProductSettings: "pos_vietnam_product_settings",
   productSyncRuns: "pos_product_sync_runs",
   devices: "pos_devices",
   members: "pos_members",

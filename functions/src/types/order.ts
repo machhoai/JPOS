@@ -28,6 +28,7 @@ export type OrderPaymentStatus =
   | "REFUND_UNKNOWN";
 
 export type OrderSyncStatus =
+  | "SKIPPED"
   | "NOT_SYNCED"
   | "PENDING"
   | "SYNCING"
@@ -50,6 +51,9 @@ export interface OrderMemberSnapshot {
 
 /** A single line item. */
 export interface OrderItem {
+  vietnamSettingsVersion?: number;
+  sendSaleToHk?: boolean;
+  vatRateName?: import("../services/vietnamSalePricing").VietnamVatRateName;
   goodsId: string;
   goodsName: string;
   /** Tax-inclusive unit price charged to the customer. */
@@ -169,6 +173,7 @@ export interface FixedTransferDetails {
 
 /** The POS order document in Firestore. */
 export interface PosOrder {
+  sendSaleToHk?: boolean;
   /** Opaque ID for the device-scoped payment status projection. */
   paymentWatchId?: string;
   localOrderId: string;

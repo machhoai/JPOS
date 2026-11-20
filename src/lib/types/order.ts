@@ -22,6 +22,7 @@ export type OrderPaymentStatus =
   | "REFUND_UNKNOWN";
 
 export type OrderSyncStatus =
+  | "SKIPPED"
   | "NOT_SYNCED"
   | "PENDING"
   | "SYNCING"
@@ -44,6 +45,9 @@ export interface OrderMemberSnapshot {
 
 /** A single line item in an order. */
 export interface OrderItem {
+  vietnamSettingsVersion?: number;
+  sendSaleToHk?: boolean;
+  vatRateName?: string;
   goodsId: string;
   goodsName: string;
   /** Giá bán một đơn vị đã bao gồm thuế. */

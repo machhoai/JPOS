@@ -86,6 +86,10 @@ function toProduct(source: StoredProduct): Product {
 
   return {
     goodsId: String(source.goodsId),
+    ...(source.vietnamSettingsVersion !== undefined ? {
+      vietnamSettingsVersion: source.vietnamSettingsVersion,
+      sendSaleToHk: source.sendSaleToHk,
+    } : {}),
     goodsName: String(source.goodsName),
     description: source.description || "",
     price,
@@ -125,7 +129,7 @@ function toProduct(source: StoredProduct): Product {
 /**
  * Product store — tải tất cả sản phẩm vào RAM để filter không độ trễ.
  */
-export const useProductStore = create<ProductState>((set) => ({
+export const useProductStore = create<ProductState>((set, get) => ({
   // ── Initial State ──────────────────────────────────────────────────────────
   products: [],
   availableCategories: [],
@@ -143,6 +147,7 @@ export const useProductStore = create<ProductState>((set) => ({
   // ── Actions ────────────────────────────────────────────────────────────────
 
   fetchProducts: async () => {
+    if (get().isLoading) return;
     set({ isLoading: true, error: null });
 
     try {
@@ -156,7 +161,7 @@ export const useProductStore = create<ProductState>((set) => ({
             Number.isFinite(product.afterTaxPrice) &&
             product.isEnabled &&
             product.isOpenSales &&
-            (product.category !== 10 || product.afterTaxPrice > 0)
+            (product.category !== 10 || product.afterTaxPrice > 0 || product.vietnamSettingsVersion !== undefined)
         );
 
       const lastSyncAt =

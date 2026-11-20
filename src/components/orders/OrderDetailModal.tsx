@@ -24,6 +24,7 @@ interface OrderDetailModalProps {
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+    LOCAL_COMPLETE: { label: "Hoàn tất nội bộ", color: "text-emerald-700" },
     SYNC_SUCCESS: { label: "Đã đồng bộ", color: "text-emerald-400" },
     REFUNDED: { label: "Đã hoàn tiền", color: "text-violet-600" },
     REFUNDING: { label: "Đang hoàn tiền", color: "text-amber-600" },

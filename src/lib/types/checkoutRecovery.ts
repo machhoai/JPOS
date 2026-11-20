@@ -2,6 +2,7 @@ import type {
   OrderItem,
   OrderMemberSnapshot,
   OrderStatus,
+  OrderSyncStatus,
   PaymentMethod,
 } from "@/lib/types/order";
 import type { PosVoucherResolution } from "@/lib/types/voucher";
@@ -28,6 +29,7 @@ export interface CheckoutJournalRecord {
   paymentMethod: PaymentMethod;
   totalAmount: number;
   orderStatus: OrderStatus | null;
+  syncStatus?: OrderSyncStatus | null;
   startedAt: string;
   updatedAt: string;
   lastError: string | null;

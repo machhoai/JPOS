@@ -1,16 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import { listenProductVisibility } from "@/lib/services/productVisibilityService";
 import { useCartStore } from "@/lib/stores/useCartStore";
-import { usePayOSPaymentStore } from "@/lib/stores/usePayOSPaymentStore";
 import { getProductGroupKey, useProductStore } from "@/lib/stores/useProductStore";
 import { showError, showWarning } from "@/lib/utils/toast";
 
 export function useProductVisibilitySync(warehouseId: string | null) {
-  const reconciling = useRef(false);
-
   useEffect(() => {
     if (!warehouseId) return;
     return listenProductVisibility(
@@ -27,49 +24,30 @@ export function useProductVisibilitySync(warehouseId: string | null) {
     );
   }, [warehouseId]);
 
-  useEffect(() => useProductStore.subscribe(async (state, previous) => {
+  useEffect(() => useProductStore.subscribe((state, previous) => {
+    const cart = useCartStore.getState();
     if (
-      reconciling.current ||
-      state.products.length === 0 ||
+      cart.isPaymentLocked || cart.isCheckingOut || !state.lastSyncAt ||
       (state.products === previous.products && state.visibilitySettings === previous.visibilitySettings)
     ) return;
     const hiddenGroups = new Set(state.visibilitySettings.disabledGroupKeys);
     const hiddenProducts = new Set(state.visibilitySettings.disabledProductIds);
-    const hiddenIds = useCartStore.getState().items
+    const products = new Map(state.products.map((product) => [product.goodsId, product]));
+    const hiddenIds = cart.items
       .filter((item) => {
-        const product = state.products.find(({ goodsId }) => goodsId === item.goodsId);
+        const product = products.get(item.goodsId);
         return !product || hiddenProducts.has(item.goodsId) || hiddenGroups.has(getProductGroupKey(product));
       })
       .map((item) => item.goodsId);
-    if (hiddenIds.length === 0) return;
-
-    reconciling.current = true;
-    try {
-      const cart = useCartStore.getState();
-      if (cart.isPaymentLocked) {
-        const orderId = cart.paymentLockOrderId;
-        const result = orderId
-          ? await usePayOSPaymentStore.getState().cancelPayment(orderId)
-          : null;
-        const payment = usePayOSPaymentStore.getState();
-        if (!orderId || result?.nextAction !== "RECREATE" ||
-            payment.localOrderId !== orderId || payment.nextAction === "COMPLETED") {
-          showWarning("Giỏ hàng vẫn được khóa", "Sản phẩm vừa ngừng bán nhưng chưa thể hủy thanh toán an toàn.");
-          return;
-        }
-        useCartStore.getState().unlockCartAfterPayOSCancellation(
-          orderId,
-          result.cancellationMode !== "LOCAL_ONLY",
-        );
-        payment.resetPayment();
-      }
-      useCartStore.getState().removeUnavailableItems(hiddenIds);
+    if (hiddenIds.length > 0) {
+      cart.removeUnavailableItems(hiddenIds);
       showWarning("Giỏ hàng đã được cập nhật", `${hiddenIds.length} sản phẩm vừa ngừng bán đã được xóa khỏi giỏ.`);
-    } catch (error) {
-      console.error("[ProductVisibility] cart reconciliation failed:", error);
-      showError("Chưa thể cập nhật giỏ", "Không hủy được giao dịch đang chờ; giỏ vẫn được khóa để bảo vệ thanh toán.");
-    } finally {
-      reconciling.current = false;
+    }
+    const prices = new Map(state.products.map((product) => [
+      product.goodsId, product.afterTaxPrice > 0 ? product.afterTaxPrice : product.price,
+    ]));
+    if (cart.refreshItemPrices(prices)) {
+      showWarning("Giá sản phẩm đã thay đổi", "Kiểm tra số tiền mới trên giỏ trước khi thanh toán.");
     }
   }), []);
 }

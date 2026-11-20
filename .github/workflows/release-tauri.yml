@@ -81,8 +81,9 @@ jobs:
           releaseBody: |
             Bản cập nhật JPOS v__VERSION__.
 
-            - Hiển thị khoản hoàn tiền trong báo cáo và phiếu chốt ca.
-            - Cải thiện cách xử lý giao dịch PayOS xác nhận sau khi đơn đã hủy.
+            - Áp dụng giá và VAT Việt Nam theo cấu hình thí điểm của cửa hàng.
+            - Hiển thị trạng thái Hoàn tất nội bộ cho đơn không gửi HK.
+            - Giữ giá đã chốt cho mã chuyển khoản đang chờ thanh toán.
 
             Ứng dụng JPOS sẽ tự kiểm tra, xác thực chữ ký và cài đặt bản phát hành này.
           generateReleaseNotes: false

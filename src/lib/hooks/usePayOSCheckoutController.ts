@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef } from "react";
 import { usePayOSPaymentTimer } from "@/lib/hooks/usePayOSPaymentTimer";
 import { logCheckoutTelemetry } from "@/lib/services/checkoutTelemetryService";
 import { generateLocalOrderId } from "@/lib/services/orderService";
-import { useCartStore } from "@/lib/stores/useCartStore";
+import { selectPayableAmount, useCartStore } from "@/lib/stores/useCartStore";
 import { usePayOSPaymentStore } from "@/lib/stores/usePayOSPaymentStore";
+import { useProductStore } from "@/lib/stores/useProductStore";
 import type {
   OrderKind,
   OrderItem,
@@ -108,7 +109,7 @@ export function usePayOSCheckoutController({
     }
     showError(
       "Không thể xử lý thanh toán",
-      "Hệ thống chưa hoàn tất thao tác. Vui lòng kiểm tra thông tin và thử lại.",
+      error,
     );
   }, [error, errorKind]);
 
@@ -147,7 +148,7 @@ export function usePayOSCheckoutController({
     } else {
       showSuccess(
         "Thanh toán chuyển khoản thành công",
-        "Đơn hàng đã hoàn thành và đang được đồng bộ nền.",
+        "Đã ghi nhận thanh toán trên JPOS.",
       );
     }
     resetPayment();
@@ -189,7 +190,8 @@ export function usePayOSCheckoutController({
         warehouseId,
         ...(memberUid ? { uid: memberUid } : {}),
         ...(member ? { member } : {}),
-        items: items.map(({ goodsId, quantity }) => ({ goodsId, quantity })),
+        items: items.map(({ goodsId, quantity, price }) => ({ goodsId, quantity, quotedPrice: price })),
+        ...(manageCartLock ? { quotedTotalAmount: selectPayableAmount(useCartStore.getState()) } : {}),
         voucherCodes,
       });
       if (result.nextAction === "WAIT") {
@@ -203,8 +205,16 @@ export function usePayOSCheckoutController({
             : "PayOS không tạo được mã. Giao dịch này cần nhân viên xác nhận thủ công.",
         );
       }
-    } catch {
-      // Store logs the technical error; the error effect shows friendly UI text.
+    } catch (error: unknown) {
+      // The checkout rejected the quote before an attempt for that quote could be created.
+      if (manageCartLock && error && typeof error === "object" &&
+          (error as { details?: { reason?: string } }).details?.reason === "ORDER_QUOTE_CHANGED" &&
+          usePayOSPaymentStore.getState().localOrderId === paymentOrderId) {
+        unlockCartAfterCancellation(paymentOrderId);
+        resetPayment();
+        void useProductStore.getState().fetchProducts();
+        showWarning("Cần kiểm tra lại giỏ", error instanceof Error ? error.message : "Giá bán hoặc voucher vừa thay đổi.");
+      }
     }
   }, [
     draftOrderId,
@@ -214,8 +224,10 @@ export function usePayOSCheckoutController({
     manageCartLock,
     member,
     memberUid,
+    resetPayment,
     shopId,
     startPayment,
+    unlockCartAfterCancellation,
     warehouseId,
     voucherCodes,
   ]);

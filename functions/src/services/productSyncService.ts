@@ -38,6 +38,7 @@ import {
   type ProductSyncActorContext,
 } from "./productSyncVisibilityService";
 import { findNewProductIds } from "./productSyncVisibilityPolicy";
+import { loadVietnamSaleSettings, resolveVietnamSaleProduct, vietnamBusinessDate } from "./vietnamSalePricing";
 const BATCH_LIMIT = 500;
 const POINT_PACKAGE_CATEGORY_IDS = new Set([1, 2, 6]);
 
@@ -316,15 +317,22 @@ async function commitProductMutations(
   }
 }
 
-export async function loadPosProductCatalog(): Promise<ProductCatalogResult> {
-  const snapshot = await db.collection(POS_COLLECTIONS.products).get();
+export async function loadPosProductCatalog(warehouseId: string): Promise<ProductCatalogResult> {
+  const [snapshot, settings] = await Promise.all([
+    db.collection(POS_COLLECTIONS.products).get(),
+    loadVietnamSaleSettings(warehouseId),
+  ]);
   const products: SyncProduct[] = [];
+  const upstream = new Map(snapshot.docs.map((doc) => [doc.id, doc.data()]));
+  const today = vietnamBusinessDate();
 
-  for (const doc of snapshot.docs) {
-    const data = doc.data() as Partial<SyncProduct>;
+  for (const goodsId of new Set([...upstream.keys(), ...settings.keys()])) {
+    const offer = resolveVietnamSaleProduct(upstream.get(goodsId), settings.get(goodsId), today);
+    if (offer.blocked || !offer.product) continue;
+    const data = offer.product as Partial<SyncProduct>;
     const price = Number(data.price);
     const storedAfterTaxPrice = Number(data.afterTaxPrice);
-    const afterTaxPrice = Number.isFinite(storedAfterTaxPrice)
+    const afterTaxPrice = Number.isFinite(storedAfterTaxPrice) && (storedAfterTaxPrice > 0 || price === 0)
       ? storedAfterTaxPrice
       : price;
     const category = Number(data.category);
@@ -346,13 +354,17 @@ export async function loadPosProductCatalog(): Promise<ProductCatalogResult> {
       !Number.isFinite(afterTaxPrice) ||
       !Number.isFinite(category) ||
       !isProductAvailable(data) ||
-      (category === SOUVENIR_CATEGORY_ID && afterTaxPrice <= 0)
+      (category === SOUVENIR_CATEGORY_ID && afterTaxPrice <= 0 && !offer.vatRateName)
     ) {
       continue;
     }
 
     products.push({
-      goodsId: String(data.goodsId || doc.id),
+      goodsId,
+      ...(offer.vietnamSettingsVersion !== undefined ? {
+        vietnamSettingsVersion: offer.vietnamSettingsVersion,
+        sendSaleToHk: offer.sendSaleToHk !== false,
+      } : {}),
       goodsName: String(data.goodsName),
       description: data.description ? String(data.description) : "",
       price,

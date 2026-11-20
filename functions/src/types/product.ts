@@ -33,6 +33,8 @@ export type ProductDisabledReason =
  * Synced from HK API via the `syncProducts` Cloud Function.
  */
 export interface SyncProduct {
+  vietnamSettingsVersion?: number;
+  sendSaleToHk?: boolean;
   goodsId: string;
   goodsName: string;
   description?: string;

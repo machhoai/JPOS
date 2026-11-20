@@ -7,6 +7,7 @@ import type {
   PosVoucherRewardType,
 } from "../types/voucher";
 import { isProductAvailableForWarehouse } from "./productVisibilityPolicy";
+import { loadVietnamSaleSettings, resolveVietnamSaleProduct, vietnamBusinessDate } from "./vietnamSalePricing";
 
 export const VOUCHER_CAMPAIGNS_COLLECTION = "marketing_voucher_campaigns";
 export const VOUCHER_CODES_COLLECTION = "marketing_voucher_codes";
@@ -137,7 +138,7 @@ export const buildVoucherResolution = (
   }
   const priceCandidate = Number(product.afterTaxPrice);
   const fallbackPrice = Number(product.price);
-  const price = Number.isFinite(priceCandidate) && priceCandidate >= 0
+  const price = Number.isFinite(priceCandidate) && (priceCandidate > 0 || fallbackPrice === 0)
     ? priceCandidate
     : fallbackPrice;
   const quantity = Number(setting.quantity);
@@ -201,9 +202,13 @@ export async function resolveVoucherForCart(
       "Voucher chưa được mapping với sản phẩm tại cửa hàng này.",
     );
   }
-  const productSnapshot = await db.collection(POS_COLLECTIONS.products).doc(productId).get();
-  const product = productSnapshot.data();
-  if (!productSnapshot.exists || !product ||
+  const [productSnapshot, vietnamSettings] = await Promise.all([
+    db.collection(POS_COLLECTIONS.products).doc(productId).get(),
+    loadVietnamSaleSettings(warehouseId, [productId]),
+  ]);
+  const offer = resolveVietnamSaleProduct(productSnapshot.data(), vietnamSettings.get(productId), vietnamBusinessDate());
+  const product = offer.product;
+  if (offer.blocked || !product || product.is_deleted === true ||
       !isProductAvailableForWarehouse(productId, product, visibilitySnapshot.data())) {
     throw new HttpsError("failed-precondition", "Sản phẩm của voucher hiện không được bán tại cửa hàng.");
   }

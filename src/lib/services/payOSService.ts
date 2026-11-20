@@ -13,7 +13,8 @@ export interface CreatePayOSPaymentInput {
   warehouseId: string;
   uid?: string;
   member?: OrderMemberSnapshot;
-  items: Array<Pick<OrderItem, "goodsId" | "quantity">>;
+  items: Array<Pick<OrderItem, "goodsId" | "quantity"> & { quotedPrice?: number }>;
+  quotedTotalAmount?: number;
   voucherCodes?: string[];
 }
 

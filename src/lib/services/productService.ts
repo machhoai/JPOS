@@ -19,6 +19,8 @@ export interface SyncProductsResult {
 
 /** Product record returned by the authenticated backend catalog endpoint. */
 export interface StoredProduct {
+  vietnamSettingsVersion?: number;
+  sendSaleToHk?: boolean;
   goodsId: string;
   goodsName: string;
   description?: string;

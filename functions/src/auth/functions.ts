@@ -349,7 +349,7 @@ export const getPosAuthSession = onCall(
 
     if (action === "getProducts") {
       try {
-        return await loadPosProductCatalog();
+        return await loadPosProductCatalog(device.warehouseId);
       } catch (error: unknown) {
         logger.error("[getPosAuthSession] Product catalog load failed", {
           uid: request.auth.uid,

@@ -31,6 +31,8 @@ export interface ProductType {
  * Dữ liệu gốc từ HK API, hiện dùng mock data.
  */
 export interface Product {
+    vietnamSettingsVersion?: number;
+    sendSaleToHk?: boolean;
     /** ID sản phẩm (setMealId hoặc passticketId hoặc giftId) */
     goodsId: string;
     /** Tên hiển thị */
