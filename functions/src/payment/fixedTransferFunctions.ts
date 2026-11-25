@@ -1,6 +1,7 @@
 import type { DocumentReference } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import { localOnlySyncUpdate } from "../order/orderLifecycle";
+import { createInvoicePaymentSnapshot } from "../order/invoicePaymentSnapshot";
 import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { getPosAuthSession } from "../services/posAuthService";
@@ -337,6 +338,7 @@ export async function confirmFixedTransferForOrder(
       updatedAt: confirmedAt,
     });
     writePaymentStatus(transaction, nextOrder);
+    createInvoicePaymentSnapshot(transaction, docRef, nextOrder);
     return nextOrder;
   });
 }

@@ -13,6 +13,7 @@ import { db } from "../config/firebase";
 import { POS_COLLECTIONS } from "../config/collections";
 import { stagePosOrderForPayOS } from "../order/functions";
 import { localOnlySyncUpdate } from "../order/orderLifecycle";
+import { createInvoicePaymentSnapshot } from "../order/invoicePaymentSnapshot";
 import { buildPayOSRedirectUrls, getPayOS } from "../services/payosService";
 import { getPosAuthSession } from "../services/posAuthService";
 import {
@@ -660,18 +661,21 @@ export async function markPayOSPaymentPaid(
       return "ALREADY_COMPLETED";
     }
     const sync = localOnlySyncUpdate(order);
-    transaction.update(docRef, {
-      status: "LOCAL_PAID",
+    const paidFields = {
+      status: "LOCAL_PAID" as const,
       ...sync,
-      paymentMethod: "QR_CODE",
+      paymentMethod: "QR_CODE" as const,
       paymentMethodId: "QR_CODE",
       paymentMethodName: "Chuyển khoản",
       paymentDetails,
       ...verificationUpdate,
       paidAt,
       updatedAt: paidAt,
-    });
-    writePaymentStatus(transaction, { ...order, status: "LOCAL_PAID", ...sync, paymentDetails, ...verificationUpdate, paidAt, updatedAt: paidAt });
+    };
+    const paidOrder = { ...order, ...paidFields };
+    transaction.update(docRef, paidFields);
+    createInvoicePaymentSnapshot(transaction, docRef, paidOrder);
+    writePaymentStatus(transaction, paidOrder);
     return "PAID";
   });
 }
@@ -1080,6 +1084,7 @@ export async function confirmPayOSPaymentManuallyForUser(
       updatedAt: confirmedAt,
     });
     writePaymentStatus(transaction, nextOrder);
+    createInvoicePaymentSnapshot(transaction, authorized.docRef, nextOrder);
     return nextOrder;
   });
   return buildPaymentResult(confirmedOrder);

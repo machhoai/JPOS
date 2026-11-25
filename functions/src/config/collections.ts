@@ -16,6 +16,11 @@ export const MEMBER_SUBCOLLECTIONS = {
   storedValueRenewalLocks: "stored_value_renewal_locks",
 } as const;
 
+/** Backend-only collections nested under a POS order document. */
+export const ORDER_SUBCOLLECTIONS = {
+  invoiceSnapshots: "invoice_snapshots",
+} as const;
+
 /**
  * Collections owned by the POS application.
  *

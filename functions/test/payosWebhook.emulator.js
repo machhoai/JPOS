@@ -26,7 +26,32 @@ test('HTTP webhook verifies signatures and never double-applies payment',async(t
   await t.test('signed amount or currency mismatch is rejected before revenue',async()=>{const o=await fixture();assert.equal((await post(signed({...o.data,amount:1999}))).status,400);assert.equal((await post(signed({...o.data,currency:'USD'}))).status,400);assert.equal((await o.ref.get()).data().status,'DRAFT');});
   await t.test('unknown order is ACKed without creating an order',async()=>{assert.equal((await post(signed({code:'00',orderCode:888888,amount:2000,currency:'VND',paymentLinkId:'unknown-link'}))).status,200);assert.equal((await db.collection('pos_orders').where('payosOrderCodes','array-contains',888888).get()).size,0);});
   await t.test('duplicate matching orders fail safely instead of selecting one',async()=>{const o=await fixture();const second=db.doc(`pos_orders/ORD-${Date.now()}-DUPLIC`);await second.set({...((await o.ref.get()).data()),localOrderId:second.id});assert.equal((await post(signed(o.data))).status,500);assert.equal((await o.ref.get()).data().status,'DRAFT');assert.equal((await second.get()).data().status,'DRAFT');});
-  await t.test('valid webhook writes PAID and replay preserves paidAt and first source',async()=>{const o=await fixture();assert.equal((await post(signed(o.data))).status,200);const first=(await o.ref.get()).data();assert.equal(first.status,'LOCAL_PAID');assert.equal(first.paymentDetails.attempts[0].confirmationSource,'WEBHOOK');assert.ok(first.paymentDetails.attempts[0].webhookReceivedAt);assert.equal((await post(signed(o.data))).status,200);assert.deepEqual((await o.ref.get()).data(),first);});
+  await t.test("valid webhook creates one payment snapshot and replay preserves it", async () => {
+    const order = await fixture();
+    const snapshotRef = order.ref.collection("invoice_snapshots").doc("payment");
+    await order.ref.update({
+      items: [{ goodsId: "SKU-1", goodsName: "Vé", quantity: 1, price: 2200, vatRateName: "10%" }],
+      discountAmount: 200,
+    });
+    assert.equal((await snapshotRef.get()).exists, false);
+    assert.equal((await post(signed(order.data))).status, 200);
+    const first = (await order.ref.get()).data();
+    const captured = await snapshotRef.get();
+    assert.equal(first.status, "LOCAL_PAID");
+    assert.equal(first.paymentDetails.attempts[0].confirmationSource, "WEBHOOK");
+    assert.ok(first.paymentDetails.attempts[0].webhookReceivedAt);
+    assert.equal(captured.data().paidAt, first.paidAt);
+    assert.equal(captured.data().totalAmount, 2000);
+    assert.equal(captured.data().discountAmount, 200);
+    assert.equal(captured.data().items[0].price, 2200);
+    assert.equal(captured.data().paymentMethodName, "Chuyển khoản");
+    assert.equal((await post(signed(order.data))).status, 200);
+    assert.deepEqual((await order.ref.get()).data(), first);
+    await order.ref.update({ hkOrderNumber: "HK-LATE", totalAmount: 3000 });
+    const after = await snapshotRef.get();
+    assert.deepEqual(after.data(), captured.data());
+    assert.ok(after.updateTime.isEqual(captured.updateTime));
+  });
   await t.test('WEBHOOK after a previously API-confirmed payment preserves first source',async()=>{const o=await fixture();const {markPayOSPaymentPaid}=require('../lib/payment/payosFunctions');await markPayOSPaymentPaid(o.ref,o.data.orderCode,{...o.data,confirmationSource:'API_CHECK'});const first=(await o.ref.get()).data();assert.equal((await post(signed(o.data))).status,200);assert.deepEqual((await o.ref.get()).data(),first);});
   await t.test("late confirmed payment is recorded without reopening a cancelled order", async () => {
     const order = await fixture();
@@ -36,6 +61,7 @@ test('HTTP webhook verifies signatures and never double-applies payment',async(t
     assert.equal(first.status, "CANCELLED");
     assert.equal(first.paymentStatus, "DRAFT");
     assert.equal(first.paidAt, undefined);
+    assert.equal((await order.ref.collection("invoice_snapshots").doc("payment").get()).exists, false);
     assert.equal(first.paymentDetails.attempts[0].latePaymentAfterCancellation, true);
     assert.equal(first.paymentDetails.attempts[0].paidAmount, 2000);
     assert.equal((await post(signed(order.data))).status, 200);

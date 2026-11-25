@@ -16,6 +16,7 @@ import {
 import { getPosAuthSession } from "../services/posAuthService";
 import { isVietnamMemberPackageCategory, loadVietnamSaleSettings, resolveVietnamMemberSalePrice, vietnamBusinessDate } from "../services/vietnamSalePricing";
 import { createInvoiceRequestToken } from "../order/invoiceRequestToken";
+import { createInvoicePaymentSnapshot } from "../order/invoicePaymentSnapshot";
 import { assertOrderCanBeRepriced } from "../order/functions";
 import type { MemberPointPackage } from "../types/member";
 import type { PosOrder } from "../types/order";
@@ -469,14 +470,16 @@ export async function sellMemberPackageForCashForUser(
     if (order.status !== "DRAFT") return;
     assertOrderCanBeRepriced(order);
     const paidAt = new Date().toISOString();
-    transaction.update(docRef, {
-      status: "LOCAL_PAID",
+    const paidFields = {
+      status: "LOCAL_PAID" as const,
       paymentMethod: "CASH",
       paymentMethodId: "CASH",
       paymentMethodName: "Tiền mặt",
       paidAt,
       updatedAt: paidAt,
-    });
+    } as const;
+    transaction.update(docRef, paidFields);
+    createInvoicePaymentSnapshot(transaction, docRef, { ...order, ...paidFields });
   });
   return finalizeMemberPackageOrder(userId, input.localOrderId);
 }

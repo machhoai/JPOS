@@ -28,6 +28,7 @@ import {
   createInvoiceRequestToken,
   isInvoiceRequestToken,
 } from "./invoiceRequestToken";
+import { createInvoicePaymentSnapshot } from "./invoicePaymentSnapshot";
 import type {
   OrderItem,
   OrderMemberSnapshot,
@@ -837,7 +838,7 @@ export async function checkoutPosOrderForUser(
       };
 
       if (!existing) {
-        transaction.create(docRef, {
+        const paidOrder = {
           ...createDraftOrder(input, items, operator),
           paymentMethod: selectedPaymentMethod.id,
           paymentMethodId: selectedPaymentMethod.id,
@@ -845,11 +846,13 @@ export async function checkoutPosOrderForUser(
           ...voucherFields,
           ...completionFields,
           updatedAt: now,
-        });
+        };
+        transaction.create(docRef, paidOrder);
+        createInvoicePaymentSnapshot(transaction, docRef, paidOrder);
         return;
       }
 
-      transaction.update(docRef, {
+      const paidFields = {
         shopId: input.shopId,
         warehouseId: input.warehouseId,
         ...(input.uid ? { uid: input.uid } : {}),
@@ -870,7 +873,9 @@ export async function checkoutPosOrderForUser(
         items,
         sendSaleToHk: sendsSaleToHk(items),
         updatedAt: now,
-      });
+      };
+      transaction.update(docRef, paidFields);
+      createInvoicePaymentSnapshot(transaction, docRef, { ...existing, ...paidFields });
     });
 
     const paidSnapshot = await docRef.get();
